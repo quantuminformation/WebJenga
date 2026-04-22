@@ -130,7 +130,7 @@
       .card h2 {
         margin: 0 0 16px;
         font-size: 1.05rem;
-        color: #f4f8ff;
+        color: var(--text);
       }
 
       .field-grid {
@@ -609,7 +609,10 @@
         overflow: auto;
         font-size: 0.94rem;
         line-height: 1.5;
-        color: #d8e6ff;
+        color: var(--text);
+        background: rgba(15, 23, 42, 0.03);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 18px;
       }
 
       @keyframes section-stress-flash {
@@ -757,7 +760,7 @@
                   <rect x="14" y="14" width="692" height="332" rx="28" fill="#f9fcff" />
                   <text class="svg-title" x="36" y="56">Uniform compression across the section</text>
                   <text class="svg-subtitle" x="36" y="82" id="section-description">
-                    Self-weight plus applied top load
+                    Self-weight plus applied top load, drawn to scale
                   </text>
                   <text class="svg-stress" x="36" y="128" id="section-stress-label">0.0 kPa</text>
                   <text class="svg-label" x="36" y="154" id="section-total-label">0.0000 MPa combined stress</text>
@@ -771,17 +774,16 @@
 
                   <g id="section-body">
                     <rect id="section-block" x="200" y="168" width="320" height="120" rx="24" fill="url(#section-fill-gradient)" stroke="rgba(15, 23, 42, 0.1)" stroke-width="2" />
-                    <rect x="222" y="190" width="276" height="76" rx="16" fill="rgba(255,255,255,0.24)" />
-                    <text class="svg-label" x="232" y="214">Cross-section area</text>
-                    <text class="svg-chip-text" x="232" y="242" id="section-area-label">0.0100 m²</text>
-                    <text class="svg-label" x="232" y="272">Stress is treated as uniform here</text>
+                    <text class="svg-label" x="38" y="204">Cross-section area</text>
+                    <text class="svg-chip-text" x="38" y="232" id="section-area-label">0.0100 m²</text>
+                    <text class="svg-label" x="38" y="258">The slab outline is drawn at scale.</text>
                   </g>
 
                   <g id="section-legend">
-                    <rect class="svg-chip" x="540" y="186" width="144" height="34" rx="17" />
-                    <text class="svg-chip-text" x="612" y="208" text-anchor="middle" id="section-self-weight-label">235 N self-weight</text>
-                    <rect class="svg-chip" x="540" y="232" width="144" height="34" rx="17" />
-                    <text class="svg-chip-text" x="612" y="254" text-anchor="middle" id="section-applied-load-label">2.5 kN applied</text>
+                    <rect class="svg-chip" x="540" y="188" width="144" height="34" rx="17" />
+                    <text class="svg-chip-text" x="612" y="210" text-anchor="middle" id="section-self-weight-label">235 N self-weight</text>
+                    <rect class="svg-chip" x="540" y="234" width="144" height="34" rx="17" />
+                    <text class="svg-chip-text" x="612" y="256" text-anchor="middle" id="section-applied-load-label">2.5 kN applied</text>
                   </g>
 
                   <g id="section-hover-marker" opacity="0">
@@ -987,19 +989,23 @@
         }
 
         function updateSection(widthM, depthM, heightM, stressPa, massKg, selfWeightN, appliedLoadN, areaM2) {
-          var footprint = widthM * depthM;
-          var planScale = Math.max(0.72, Math.min(1.18, Math.sqrt(footprint / 0.01)));
           var stressRatio = Math.max(0, Math.min(1, stressPa / displayScalePa));
           var hue = 212 - stressRatio * 112;
           var topFill = "hsla(" + hue + ", 92%, 94%, 1)";
           var bottomFill = "hsla(" + hue + ", 88%, 58%, 1)";
           var loadRatio = Math.max(0, Math.min(1, appliedLoadN / displayLoadScaleN));
-          var loadStroke = 10 + loadRatio * 4;
           var scaleKpa = displayScalePa / 1000;
-          var sectionBlockWidth = Math.round(320 * planScale);
-          var sectionBlockHeight = 128;
+          var maxBlockWidth = 420;
+          var maxBlockHeight = 170;
+          var scale = Math.min(maxBlockWidth / widthM, maxBlockHeight / depthM);
+          var sectionBlockWidth = Math.max(12, Math.round(widthM * scale));
+          var sectionBlockHeight = Math.max(12, Math.round(depthM * scale));
           var sectionBlockX = Math.round((720 - sectionBlockWidth) / 2);
-          var sectionBlockY = 168;
+          var sectionBlockY = Math.round(226 - sectionBlockHeight / 2);
+          var arrowTopY = Math.max(32, sectionBlockY - 70);
+          var arrowTipY = Math.max(50, sectionBlockY - 16);
+          var arrowLabelY = Math.max(70, sectionBlockY - 2);
+          var arrowStroke = 10 + loadRatio * 4;
 
           currentSection = {
             widthM: widthM,
@@ -1029,7 +1035,7 @@
           sectionSelfWeightLabel.textContent = formatForce(selfWeightN) + " self-weight";
           sectionAppliedLoadLabel.textContent = formatForce(appliedLoadN);
           sectionDescription.textContent =
-            "Hover or tap the slab to read exact coordinates and stress. This load case is uniform, so every point matches the same combined value.";
+            "Hover or tap the slab to read exact coordinates and stress. The rectangle is drawn to the same width-to-depth ratio as the inputs.";
           ratioLabel.textContent = Math.round(stressRatio * 100) + "% of " + formatFixed(scaleKpa, 0) + " kPa scale";
 
           if (sectionBlock) {
@@ -1044,9 +1050,16 @@
 
           var loadArrow = document.getElementById("section-load-arrow");
           if (loadArrow) {
-            loadArrow.querySelector("line").setAttribute("stroke-width", String(loadStroke));
+            loadArrow.querySelector("line").setAttribute("y1", String(arrowTopY));
+            loadArrow.querySelector("line").setAttribute("y2", String(arrowTipY));
+            loadArrow.querySelector("line").setAttribute("stroke-width", String(arrowStroke));
             loadArrow.querySelector("line").setAttribute("opacity", String(0.72 + loadRatio * 0.28));
-            loadArrow.querySelector("polygon").setAttribute("opacity", String(0.82 + loadRatio * 0.18));
+            loadArrow.querySelector("polygon").setAttribute(
+              "points",
+              "360," + (Math.max(24, arrowTopY - 18)) + " " + (360 - 18) + "," + (arrowTopY + 24) + " " + (360 + 18) + "," + (arrowTopY + 24)
+            );
+            loadArrow.querySelector("rect").setAttribute("y", String(arrowLabelY));
+            loadArrow.querySelector("text").setAttribute("y", String(arrowLabelY + 22));
           }
 
           if (hoverCard.classList.contains("is-visible") && lastHover) {
