@@ -1,0 +1,10 @@
+{
+  "name": "@webjenga/viewer",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  }
+}

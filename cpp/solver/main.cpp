@@ -1,5 +1,6 @@
 #include <iomanip>
 #include <iostream>
+#include <cmath>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -25,8 +26,9 @@ struct StressReport {
     double combined_stress_pa;
 };
 
+constexpr double gravity_m_s2 = 9.80665;
+
 StressReport calculate_stress_report(const ConcretePrism& prism, double applied_load_n) {
-    constexpr double gravity_m_s2 = 9.80665;
     const double area_m2 = prism.width_m * prism.depth_m;
     const double volume_m3 = area_m2 * prism.height_m;
     const double mass_kg = prism.density_kg_m3 * volume_m3;
@@ -45,6 +47,48 @@ StressReport calculate_stress_report(const ConcretePrism& prism, double applied_
         applied_load_stress_pa,
         combined_stress_pa,
     };
+}
+
+bool is_inside_prism(const ConcretePrism& prism, double x_m, double y_m, double z_m) {
+    return std::abs(x_m) <= prism.width_m * 0.5 &&
+           std::abs(z_m) <= prism.depth_m * 0.5 &&
+           y_m >= -prism.height_m * 0.5 &&
+           y_m <= prism.height_m * 0.5;
+}
+
+double calculate_stress_at_point_pa(
+    const ConcretePrism& prism,
+    double applied_load_n,
+    double ground_depth_m,
+    double x_m,
+    double y_m,
+    double z_m) {
+    const StressReport report = calculate_stress_report(prism, applied_load_n);
+    const double ground_top_y_m = -prism.height_m * 0.5;
+
+    if (is_inside_prism(prism, x_m, y_m, z_m)) {
+        const double cover_to_top_m = prism.height_m * 0.5 - y_m;
+        return report.applied_load_stress_pa + prism.density_kg_m3 * gravity_m_s2 * cover_to_top_m;
+    }
+
+    if (y_m < ground_top_y_m && y_m >= ground_top_y_m - ground_depth_m) {
+        const double depth_below_surface_m = ground_top_y_m - y_m;
+        const double spread_width_m = prism.width_m + depth_below_surface_m;
+        const double spread_depth_m = prism.depth_m + depth_below_surface_m;
+        const double geostatic_stress_pa = prism.density_kg_m3 * gravity_m_s2 * depth_below_surface_m;
+        const double transferred_load_n = report.self_weight_n + applied_load_n;
+        const bool is_inside_spread =
+            std::abs(x_m) <= spread_width_m * 0.5 &&
+            std::abs(z_m) <= spread_depth_m * 0.5;
+
+        if (is_inside_spread) {
+            return geostatic_stress_pa + transferred_load_n / (spread_width_m * spread_depth_m);
+        }
+
+        return geostatic_stress_pa;
+    }
+
+    return 0.0;
 }
 
 void print_report(const ConcretePrism& prism, const StressReport& report) {
@@ -78,30 +122,41 @@ void print_report(const ConcretePrism& prism, const StressReport& report) {
     std::cout << "  W = m x g\n";
     std::cout << "  W = " << report.mass_kg << " x 9.80665 = " << report.self_weight_n << " N\n\n";
 
-    std::cout << "Step 5: self-weight stress\n";
-    std::cout << "  sigma_self = W / A\n";
-    std::cout << "  sigma_self = " << report.self_weight_n << " / " << report.area_m2 << " = "
+    std::cout << "Step 5: self-weight stress field\n";
+    std::cout << "  sigma_self(y) increases linearly toward the base\n";
+    std::cout << "  sigma_self,top = 0 Pa\n";
+    std::cout << "  sigma_self,base = W / A\n";
+    std::cout << "  sigma_self,base = " << report.self_weight_n << " / " << report.area_m2 << " = "
               << report.self_weight_stress_pa << " Pa\n";
-    std::cout << "  sigma_self = " << self_weight_stress_kpa << " kPa\n\n";
+    std::cout << "  sigma_self,base = " << self_weight_stress_kpa << " kPa\n\n";
 
     std::cout << "Step 6: applied top load stress\n";
-    std::cout << "  sigma_top = P / A\n";
-    std::cout << "  sigma_top = " << report.applied_load_n << " / " << report.area_m2 << " = "
+    std::cout << "  sigma_P = P / A\n";
+    std::cout << "  sigma_P = " << report.applied_load_n << " / " << report.area_m2 << " = "
               << report.applied_load_stress_pa << " Pa\n";
-    std::cout << "  sigma_top = " << applied_load_stress_kpa << " kPa\n\n";
+    std::cout << "  sigma_P = " << applied_load_stress_kpa << " kPa\n";
+    std::cout << "  sigma_P is uniform through the prism\n\n";
 
-    std::cout << "Step 7: combined stress\n";
-    std::cout << "  sigma_total = sigma_self + sigma_top\n";
-    std::cout << "  sigma_total = " << report.self_weight_stress_pa << " + "
-              << report.applied_load_stress_pa << " = " << report.combined_stress_pa << " Pa\n";
-    std::cout << "  sigma_total = " << combined_stress_kpa << " kPa\n";
-    std::cout << "  sigma_total = " << combined_stress_mpa << " MPa\n\n";
+    std::cout << "Step 7: total axial stress field\n";
+    std::cout << "  sigma(y) = sigma_P + sigma_self(y)\n";
+    std::cout << "  sigma_top_surface = sigma_P = " << report.applied_load_stress_pa << " Pa\n";
+    std::cout << "  sigma_base = sigma_P + sigma_self,base\n";
+    std::cout << "  sigma_base = " << report.applied_load_stress_pa << " + "
+              << report.self_weight_stress_pa << " = " << report.combined_stress_pa << " Pa\n";
+    std::cout << "  sigma_base = " << combined_stress_kpa << " kPa\n";
+    std::cout << "  sigma_base = " << combined_stress_mpa << " MPa\n";
+    std::cout << "  The stress therefore varies linearly from " << applied_load_stress_kpa
+              << " kPa at the top to " << combined_stress_kpa << " kPa at the base.\n\n";
 
-    std::cout << "Identity for this two-load demo:\n";
-    std::cout << "  sigma_total = density x g x height + P / A\n";
-    std::cout << "  sigma_total = " << prism.density_kg_m3 << " x 9.80665 x " << prism.height_m
+    std::cout << "Base-stress identity for this two-load demo:\n";
+    std::cout << "  sigma_base = density x g x height + P / A\n";
+    std::cout << "  sigma_base = " << prism.density_kg_m3 << " x 9.80665 x " << prism.height_m
               << " + " << report.applied_load_n << " / " << report.area_m2 << " = "
               << report.combined_stress_pa << " Pa\n";
+    std::cout << "\nSpatial field note:\n";
+    std::cout << "  The browser viewer now samples sigma(x, y, z).\n";
+    std::cout << "  Inside the prism this demo uses the axial + self-weight field above.\n";
+    std::cout << "  In the ground it uses a first-pass 2:1 load-spread estimate plus geostatic stress.\n";
 }
 
 extern "C" {
@@ -145,6 +200,33 @@ EMSCRIPTEN_KEEPALIVE double calculate_self_weight_stress_pa(
     double height_m,
     double density_kg_m3) {
     return calculate_combined_stress_pa(width_m, depth_m, height_m, density_kg_m3, 0.0);
+}
+
+EMSCRIPTEN_KEEPALIVE double calculate_stress_at_point_pa_export(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3,
+    double applied_load_n,
+    double ground_depth_m,
+    double x_m,
+    double y_m,
+    double z_m) {
+    const ConcretePrism prism{
+        width_m,
+        depth_m,
+        height_m,
+        density_kg_m3,
+    };
+
+    return calculate_stress_at_point_pa(
+        prism,
+        applied_load_n,
+        ground_depth_m,
+        x_m,
+        y_m,
+        z_m
+    );
 }
 
 EMSCRIPTEN_KEEPALIVE void print_self_weight_report(

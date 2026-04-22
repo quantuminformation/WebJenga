@@ -1,26 +1,54 @@
 # C++ Concrete Stress Demo
 
-Native build:
+This repo is now a small pnpm workspace:
+
+- `cpp/solver`: C++ engineering logic compiled to WebAssembly
+- `packages/viewer`: reusable 3D viewer package
+- `packages/wasm-bridge`: browser bridge for the generated Emscripten module
+- `apps/web`: Vite-based browser app
+
+Install workspace dependencies:
 
 ```bash
-g++ main.cpp -o hello
-./hello
+pnpm install
 ```
 
-Browser build with Emscripten:
+Native solver build:
 
 ```bash
-./scripts/build-wasm.sh
-python3 -m http.server
+g++ cpp/solver/main.cpp -o build/hello
+./build/hello
 ```
 
-Then open `http://localhost:8000/web/index.html`.
+WebAssembly build only:
+
+```bash
+pnpm run build:wasm
+```
+
+Run the workspace web app in development:
+
+```bash
+pnpm dev
+```
+
+Build the deployable site into `web/`:
+
+```bash
+pnpm build
+```
+
+Preview the production build locally:
+
+```bash
+pnpm preview
+```
 
 GitHub Pages deployment:
 
 1. Push to `main`.
 2. In the repository settings, set Pages source to `GitHub Actions`.
-3. GitHub Actions will build the site and deploy the `web/` folder.
+3. GitHub Actions will run the pnpm workspace build and deploy the generated `web/` folder.
 4. Live demo: [https://quantuminformation.github.io/WebJenga/](https://quantuminformation.github.io/WebJenga/)
 
 Notes:

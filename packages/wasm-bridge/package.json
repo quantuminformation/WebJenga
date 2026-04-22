@@ -1,0 +1,7 @@
+{
+  "name": "@webjenga/wasm-bridge",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

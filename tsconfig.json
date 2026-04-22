@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowJs": false,
+    "checkJs": false,
+    "strict": false,
+    "noEmit": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "apps/web/src/**/*.ts",
+    "apps/web/src/**/*.d.ts",
+    "apps/web/vite.config.ts",
+    "packages/viewer/src/**/*.ts",
+    "packages/wasm-bridge/src/**/*.ts"
+  ]
+}
