@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>C++ Hello World in WebAssembly</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        padding: 2rem;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 1.5rem;
+        background: #111827;
+        border: 1px solid #334155;
+        border-radius: 1rem;
+      }
+
+      pre {
+        margin: 1rem 0 0;
+        padding: 1rem;
+        background: #020617;
+        border-radius: 0.75rem;
+        min-height: 4rem;
+        white-space: pre-wrap;
+      }
+    </style>
+    <script>
+      var Module = {
+        print: function (text) {
+          var output = document.getElementById("output");
+          output.textContent += text + "\n";
+        },
+        printErr: function (text) {
+          var output = document.getElementById("output");
+          output.textContent += "[stderr] " + text + "\n";
+        },
+      };
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>C++ Hello World</h1>
+      <p>The WebAssembly module prints below when it loads.</p>
+      <pre id="output"></pre>
+    </main>
+    <script src="../build/web/main.js"></script>
+  </body>
+</html>

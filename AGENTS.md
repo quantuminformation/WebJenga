@@ -1,4 +1,3 @@
-# Agents
+Add commit messages after each piece of work is done.
 
-- Added a minimal C++ hello-world program in `main.cpp`.
-- Suggested commit message: `Add C++ hello world sample`
+Commit message for browser build: `Add browser WebAssembly build`

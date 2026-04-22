@@ -4,3 +4,6 @@ hello
 *.obj
 *.exe
 *.out
+.idea
+.DS_Store
+.emscripten-cache/
