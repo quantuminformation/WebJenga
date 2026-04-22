@@ -1,4 +1,4 @@
-# C++ Hello World
+# C++ Concrete Stress Demo
 
 Native build:
 
@@ -21,3 +21,9 @@ GitHub Pages deployment:
 1. Push to `main`.
 2. In the repository settings, set Pages source to `GitHub Actions`.
 3. GitHub Actions will build the site and deploy the `web/` folder.
+
+Notes:
+
+- This first step calculates self-weight stress only.
+- It uses a simple axial model: `sigma = F / A`, with `F = m g`.
+- It is a demo for the browser visualiser, not a code-compliant structural design check.
