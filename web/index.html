@@ -216,6 +216,7 @@
         width: 100%;
         height: auto;
         touch-action: none;
+        cursor: crosshair;
       }
 
       .section-svg text {
@@ -239,6 +240,13 @@
         font-size: 32px;
         font-weight: 800;
         letter-spacing: -0.04em;
+        transition: transform 120ms ease, opacity 120ms ease, fill 120ms ease;
+        transform-origin: left center;
+      }
+
+      .svg-stress.is-probing {
+        transform: translateY(-1px) scale(1.015);
+        fill: #1f5eff;
       }
 
       .svg-label {
@@ -255,6 +263,12 @@
         fill: var(--text);
         font-size: 13px;
         font-weight: 700;
+      }
+
+      .section-svg.is-hovering #section-block {
+        stroke: rgba(43, 107, 255, 0.38);
+        stroke-width: 3;
+        filter: brightness(1.04) saturate(1.06);
       }
 
       .svg-dimension {
@@ -326,6 +340,29 @@
         color: var(--muted);
         font-size: 0.82rem;
         line-height: 1.45;
+      }
+
+      .probe-readout {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 6px 0 14px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .probe-readout strong {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .probe-pill {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(43, 107, 255, 0.08);
+        color: var(--accent);
+        font-size: 0.8rem;
+        font-weight: 700;
       }
 
       .diagram-item {
@@ -786,6 +823,10 @@
               <div>
                 <h2>Cross-sectional stress</h2>
                 <div class="big-number"><span id="stress-kpa">0.0</span><span class="unit">kPa</span></div>
+                <div class="probe-readout" id="probe-readout">
+                  <span class="probe-pill">Point probe</span>
+                  <span id="probe-readout-text">Move over the slab to see a point readout.</span>
+                </div>
               </div>
               <div class="pill" id="ratio-label">0% of 500 kPa scale</div>
             </div>
@@ -947,6 +988,7 @@
         var hoverCoords = document.getElementById("hover-coords");
         var hoverStress = document.getElementById("hover-stress");
         var hoverNote = document.getElementById("hover-note");
+        var probeReadoutText = document.getElementById("probe-readout-text");
         var sectionSvg = document.getElementById("section-svg");
         var sectionBlock = document.getElementById("section-block");
         var lastHover = null;
@@ -1000,6 +1042,9 @@
           hoverCard.classList.remove("is-visible");
           sectionHoverMarker.setAttribute("opacity", "0");
           sectionStressLabel.textContent = formatFixed(currentSection.combinedStressPa / 1000, 1) + " kPa";
+          sectionStressLabel.classList.remove("is-probing");
+          sectionSvg.classList.remove("is-hovering");
+          probeReadoutText.textContent = "Move over the slab to see a point readout.";
           lastHover = null;
         }
 
@@ -1042,6 +1087,11 @@
             formatFixed(selfKpa, 1) + " self-weight + " + formatFixed(appliedKpa, 1) + " applied)";
           hoverNote.textContent = "Uniform compression: this load case gives the same stress at every point.";
           sectionStressLabel.textContent = formatFixed(totalKpa, 1) + " kPa";
+          sectionStressLabel.classList.add("is-probing");
+          sectionSvg.classList.add("is-hovering");
+          probeReadoutText.textContent =
+            "x = " + formatFixed(pointX, 3) + " m, y = " + formatFixed(pointY, 3) + " m, σ = " +
+            formatFixed(totalKpa, 1) + " kPa";
           hoverCard.classList.add("is-visible");
 
           lastHover = {
@@ -1257,13 +1307,17 @@
           updateSection(widthM, depthM, heightM, combinedStressPa, massKg, selfWeightN, appliedLoadN, areaM2);
         }
 
-        sectionSvg.addEventListener("pointermove", function (event) {
+        function handleProbeMove(event) {
           var svgPoint = getSvgPointAt(event.clientX, event.clientY);
           if (!svgPoint) {
             return;
           }
           showHoverAt(event.clientX, event.clientY, svgPoint.x, svgPoint.y);
-        });
+        }
+
+        sectionSvg.addEventListener("pointermove", handleProbeMove);
+        sectionSvg.addEventListener("mousemove", handleProbeMove);
+        sectionSvg.addEventListener("mouseenter", handleProbeMove);
 
         sectionSvg.addEventListener("pointerdown", function (event) {
           var svgPoint = getSvgPointAt(event.clientX, event.clientY);
@@ -1294,6 +1348,8 @@
             }
           }
         });
+
+        sectionSvg.addEventListener("mouseover", handleProbeMove);
 
         width.addEventListener("input", render);
         depth.addEventListener("input", render);
