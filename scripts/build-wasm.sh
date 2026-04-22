@@ -1,10 +1,16 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-source "$HOME/opt/emsdk/emsdk_env.sh"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-export EM_CACHE="$PWD/.emscripten-cache"
+. "$HOME/opt/emsdk/emsdk_env.sh"
+
+export EM_CACHE="$ROOT_DIR/.emscripten-cache"
 
 mkdir -p "$EM_CACHE"
-mkdir -p build/web
+mkdir -p "$ROOT_DIR/build/web"
+cd "$ROOT_DIR"
+echo "Building WebAssembly output..."
 emcc main.cpp -O2 -sEXIT_RUNTIME=1 -o build/web/main.js
+echo "Done: build/web/main.js and build/web/main.wasm"
