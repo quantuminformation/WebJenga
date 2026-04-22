@@ -256,6 +256,32 @@
         font-weight: 700;
       }
 
+      .svg-dimension {
+        fill: none;
+        stroke: rgba(15, 23, 42, 0.28);
+        stroke-width: 1.5;
+        stroke-linecap: round;
+      }
+
+      .svg-dimension-tick {
+        stroke: rgba(15, 23, 42, 0.28);
+        stroke-width: 1.5;
+        stroke-linecap: round;
+      }
+
+      .svg-dimension-text {
+        fill: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+
+      .svg-scale-text {
+        fill: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
       .diagram-legend {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -779,6 +805,25 @@
                     <text class="svg-label" x="38" y="258">The slab outline is drawn at scale.</text>
                   </g>
 
+                  <g id="section-dimension-guides">
+                    <line class="svg-dimension" id="section-width-line" x1="200" y1="146" x2="520" y2="146" />
+                    <line class="svg-dimension-tick" id="section-width-tick-start" x1="200" y1="139" x2="200" y2="153" />
+                    <line class="svg-dimension-tick" id="section-width-tick-end" x1="520" y1="139" x2="520" y2="153" />
+                    <text class="svg-dimension-text" id="section-width-label" x="360" y="136" text-anchor="middle">W = 0.100 m</text>
+
+                    <line class="svg-dimension" id="section-depth-line" x1="176" y1="168" x2="176" y2="288" />
+                    <line class="svg-dimension-tick" id="section-depth-tick-start" x1="169" y1="168" x2="183" y2="168" />
+                    <line class="svg-dimension-tick" id="section-depth-tick-end" x1="169" y1="288" x2="183" y2="288" />
+                    <text class="svg-dimension-text" id="section-depth-label" x="160" y="228" text-anchor="middle" transform="rotate(-90 160 228)">D = 0.100 m</text>
+                  </g>
+
+                  <g id="section-scale-bar">
+                    <line class="svg-dimension" id="section-scale-line" x1="42" y1="306" x2="142" y2="306" />
+                    <line class="svg-dimension-tick" id="section-scale-tick-start" x1="42" y1="299" x2="42" y2="313" />
+                    <line class="svg-dimension-tick" id="section-scale-tick-end" x1="142" y1="299" x2="142" y2="313" />
+                    <text class="svg-scale-text" id="section-scale-label" x="92" y="294" text-anchor="middle">0.05 m scale bar</text>
+                  </g>
+
                   <g id="section-legend">
                     <rect class="svg-chip" x="540" y="188" width="144" height="34" rx="17" />
                     <text class="svg-chip-text" x="612" y="210" text-anchor="middle" id="section-self-weight-label">235 N self-weight</text>
@@ -859,6 +904,18 @@
         var sectionSelfWeightLabel = document.getElementById("section-self-weight-label");
         var sectionAppliedLoadLabel = document.getElementById("section-applied-load-label");
         var sectionDimensions = document.getElementById("section-dimensions");
+        var sectionWidthLine = document.getElementById("section-width-line");
+        var sectionWidthTickStart = document.getElementById("section-width-tick-start");
+        var sectionWidthTickEnd = document.getElementById("section-width-tick-end");
+        var sectionWidthLabel = document.getElementById("section-width-label");
+        var sectionDepthLine = document.getElementById("section-depth-line");
+        var sectionDepthTickStart = document.getElementById("section-depth-tick-start");
+        var sectionDepthTickEnd = document.getElementById("section-depth-tick-end");
+        var sectionDepthLabel = document.getElementById("section-depth-label");
+        var sectionScaleLine = document.getElementById("section-scale-line");
+        var sectionScaleTickStart = document.getElementById("section-scale-tick-start");
+        var sectionScaleTickEnd = document.getElementById("section-scale-tick-end");
+        var sectionScaleLabel = document.getElementById("section-scale-label");
         var sectionHoverMarker = document.getElementById("section-hover-marker");
         var sectionHoverRing = document.getElementById("section-hover-ring");
         var sectionHoverDot = document.getElementById("section-hover-dot");
@@ -1002,6 +1059,16 @@
           var sectionBlockHeight = Math.max(12, Math.round(depthM * scale));
           var sectionBlockX = Math.round((720 - sectionBlockWidth) / 2);
           var sectionBlockY = Math.round(226 - sectionBlockHeight / 2);
+          var sectionBlockRight = sectionBlockX + sectionBlockWidth;
+          var sectionBlockBottom = sectionBlockY + sectionBlockHeight;
+          var dimensionY = Math.max(52, sectionBlockY - 22);
+          var dimensionX = Math.max(56, sectionBlockX - 26);
+          var dimensionCenterX = sectionBlockX + sectionBlockWidth / 2;
+          var dimensionCenterY = sectionBlockY + sectionBlockHeight / 2;
+          var scaleBarM = Math.max(0.02, Math.min(0.1, Math.min(widthM, depthM) / 2));
+          var scaleBarWidth = Math.max(36, Math.round(scaleBarM * scale));
+          var scaleBarX = 42;
+          var scaleBarY = 306;
           var arrowTopY = Math.max(32, sectionBlockY - 70);
           var arrowTipY = Math.max(50, sectionBlockY - 16);
           var arrowLabelY = Math.max(70, sectionBlockY - 2);
@@ -1035,7 +1102,7 @@
           sectionSelfWeightLabel.textContent = formatForce(selfWeightN) + " self-weight";
           sectionAppliedLoadLabel.textContent = formatForce(appliedLoadN);
           sectionDescription.textContent =
-            "Hover or tap the slab to read exact coordinates and stress. The rectangle is drawn to the same width-to-depth ratio as the inputs.";
+            "Hover or tap the slab to read exact coordinates and stress. The outline and dimension lines are drawn to the same width-to-depth ratio as the inputs.";
           ratioLabel.textContent = Math.round(stressRatio * 100) + "% of " + formatFixed(scaleKpa, 0) + " kPa scale";
 
           if (sectionBlock) {
@@ -1043,9 +1110,64 @@
             sectionBlock.setAttribute("y", String(sectionBlockY));
             sectionBlock.setAttribute("width", String(sectionBlockWidth));
             sectionBlock.setAttribute("height", String(sectionBlockHeight));
-            sectionBlock.style.animation = "none";
-            void sectionBlock.offsetWidth;
-            sectionBlock.style.animation = "section-stress-flash 360ms ease";
+          }
+
+          if (sectionWidthLine) {
+            sectionWidthLine.setAttribute("x1", String(sectionBlockX));
+            sectionWidthLine.setAttribute("x2", String(sectionBlockRight));
+            sectionWidthLine.setAttribute("y1", String(dimensionY));
+            sectionWidthLine.setAttribute("y2", String(dimensionY));
+            sectionWidthTickStart.setAttribute("x1", String(sectionBlockX));
+            sectionWidthTickStart.setAttribute("x2", String(sectionBlockX));
+            sectionWidthTickStart.setAttribute("y1", String(dimensionY - 8));
+            sectionWidthTickStart.setAttribute("y2", String(dimensionY + 8));
+            sectionWidthTickEnd.setAttribute("x1", String(sectionBlockRight));
+            sectionWidthTickEnd.setAttribute("x2", String(sectionBlockRight));
+            sectionWidthTickEnd.setAttribute("y1", String(dimensionY - 8));
+            sectionWidthTickEnd.setAttribute("y2", String(dimensionY + 8));
+            sectionWidthLabel.setAttribute("x", String(dimensionCenterX));
+            sectionWidthLabel.setAttribute("y", String(dimensionY - 12));
+            sectionWidthLabel.textContent = "W = " + formatFixed(widthM, 3) + " m";
+          }
+
+          if (sectionDepthLine) {
+            sectionDepthLine.setAttribute("x1", String(dimensionX));
+            sectionDepthLine.setAttribute("x2", String(dimensionX));
+            sectionDepthLine.setAttribute("y1", String(sectionBlockY));
+            sectionDepthLine.setAttribute("y2", String(sectionBlockBottom));
+            sectionDepthTickStart.setAttribute("x1", String(dimensionX - 8));
+            sectionDepthTickStart.setAttribute("x2", String(dimensionX + 8));
+            sectionDepthTickStart.setAttribute("y1", String(sectionBlockY));
+            sectionDepthTickStart.setAttribute("y2", String(sectionBlockY));
+            sectionDepthTickEnd.setAttribute("x1", String(dimensionX - 8));
+            sectionDepthTickEnd.setAttribute("x2", String(dimensionX + 8));
+            sectionDepthTickEnd.setAttribute("y1", String(sectionBlockBottom));
+            sectionDepthTickEnd.setAttribute("y2", String(sectionBlockBottom));
+            sectionDepthLabel.setAttribute("x", String(dimensionX - 16));
+            sectionDepthLabel.setAttribute("y", String(dimensionCenterY));
+            sectionDepthLabel.setAttribute(
+              "transform",
+              "rotate(-90 " + (dimensionX - 16) + " " + dimensionCenterY + ")"
+            );
+            sectionDepthLabel.textContent = "D = " + formatFixed(depthM, 3) + " m";
+          }
+
+          if (sectionScaleLine) {
+            sectionScaleLine.setAttribute("x1", String(scaleBarX));
+            sectionScaleLine.setAttribute("x2", String(scaleBarX + scaleBarWidth));
+            sectionScaleLine.setAttribute("y1", String(scaleBarY));
+            sectionScaleLine.setAttribute("y2", String(scaleBarY));
+            sectionScaleTickStart.setAttribute("x1", String(scaleBarX));
+            sectionScaleTickStart.setAttribute("x2", String(scaleBarX));
+            sectionScaleTickStart.setAttribute("y1", String(scaleBarY - 7));
+            sectionScaleTickStart.setAttribute("y2", String(scaleBarY + 7));
+            sectionScaleTickEnd.setAttribute("x1", String(scaleBarX + scaleBarWidth));
+            sectionScaleTickEnd.setAttribute("x2", String(scaleBarX + scaleBarWidth));
+            sectionScaleTickEnd.setAttribute("y1", String(scaleBarY - 7));
+            sectionScaleTickEnd.setAttribute("y2", String(scaleBarY + 7));
+            sectionScaleLabel.setAttribute("x", String(scaleBarX + scaleBarWidth / 2));
+            sectionScaleLabel.setAttribute("y", String(scaleBarY - 10));
+            sectionScaleLabel.textContent = formatFixed(scaleBarM, 3) + " m scale bar";
           }
 
           var loadArrow = document.getElementById("section-load-arrow");
