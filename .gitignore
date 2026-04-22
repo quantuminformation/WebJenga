@@ -7,3 +7,5 @@ hello
 .idea
 .DS_Store
 .emscripten-cache/
+web/main.js
+web/main.wasm

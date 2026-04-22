@@ -9,8 +9,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 export EM_CACHE="$ROOT_DIR/.emscripten-cache"
 
 mkdir -p "$EM_CACHE"
-mkdir -p "$ROOT_DIR/build/web"
+mkdir -p "$ROOT_DIR/web"
 cd "$ROOT_DIR"
 echo "Building WebAssembly output..."
-emcc main.cpp -O2 -sEXIT_RUNTIME=1 -o build/web/main.js
-echo "Done: build/web/main.js and build/web/main.wasm"
+emcc main.cpp -O2 -sEXIT_RUNTIME=1 -o web/main.js
+echo "Done: web/main.js and web/main.wasm"
