@@ -52,6 +52,7 @@ export interface ViewerState {
   showGroundVolume: boolean;
   showSection: boolean;
   showSky: boolean;
+  theme: "dark" | "light";
   volumeBottomColorCss: string;
   volumeSliceCount: number;
   volumeTopColorCss: string;
@@ -512,7 +513,8 @@ export function createConcreteStressViewer(
   controls.minPolarAngle = 0.08;
   controls.maxPolarAngle = Math.PI / 2 - 0.04;
 
-  scene.add(new THREE.HemisphereLight(0xf7fbff, 0x6f8a68, 1.65));
+  const hemisphereLight = new THREE.HemisphereLight(0xf7fbff, 0x6f8a68, 1.65);
+  scene.add(hemisphereLight);
 
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.05);
   keyLight.position.set(5, 6, 3);
@@ -811,6 +813,7 @@ export function createConcreteStressViewer(
     showGround: true,
     showGroundVolume: true,
     showSky: true,
+    theme: "light",
     groundStressField: null,
     groundStressVolumeLayers: null,
   };
@@ -1029,6 +1032,59 @@ export function createConcreteStressViewer(
     referenceFigureShadow.scale.set(figureWidth * 1.5, figureDepth * 2.1, 1);
   }
 
+  function updateTheme(state) {
+    const isDark = state.theme === "dark";
+    const groundMaterial = groundPlane.material as THREE.MeshStandardMaterial;
+    const houseShadowMaterial = referenceHouseShadow.material as THREE.MeshBasicMaterial;
+    const figureShadowMaterial = referenceFigureShadow.material as THREE.MeshBasicMaterial;
+    const contactShadowMaterial = contactShadow.material as THREE.MeshBasicMaterial;
+    const prismLineMaterial = prismEdges.material as THREE.LineBasicMaterial;
+    const sectionLineMaterial = sectionOutline.material as THREE.LineBasicMaterial;
+
+    scene.fog.color.set(isDark ? 0x0f1826 : 0xd4e4f6);
+    renderer.toneMappingExposure = isDark ? 0.9 : 1;
+    hemisphereLight.color.set(isDark ? 0x5e85c1 : 0xf7fbff);
+    hemisphereLight.groundColor.set(isDark ? 0x213322 : 0x6f8a68);
+    hemisphereLight.intensity = isDark ? 0.72 : 1.65;
+    keyLight.color.set(isDark ? 0xbfcfff : 0xffffff);
+    keyLight.intensity = isDark ? 0.82 : 1.05;
+    fillLight.color.set(isDark ? 0x35547a : 0xcde5ff);
+    fillLight.intensity = isDark ? 0.28 : 0.42;
+    groundMaterial.color.set(isDark ? 0x394031 : 0xf2eee2);
+    prismLineMaterial.color.set(isDark ? 0xc7d3e3 : 0x102033);
+    prismLineMaterial.opacity = isDark ? 0.28 : 0.22;
+    sectionLineMaterial.color.set(isDark ? 0xe7f0ff : 0x102033);
+    sectionNormal.line.material.color.set(isDark ? 0x88b4ff : 0x2b6bff);
+    sectionNormal.cone.material.color.set(isDark ? 0x88b4ff : 0x2b6bff);
+    contactShadowMaterial.opacity = isDark ? 0.38 : 0.28;
+    houseShadowMaterial.opacity = isDark ? 0.22 : 0.18;
+    figureShadowMaterial.opacity = isDark ? 0.16 : 0.12;
+    setVerticalGradientGeometryColor(
+      skyDome.geometry,
+      2,
+      new THREE.Color(isDark ? 0x111b2c : 0xf7ecce),
+      new THREE.Color(isDark ? 0x253c62 : 0x9ecbff)
+    );
+    sunGlow.material.color.set(isDark ? 0xa8b7ff : 0xffd878);
+    sunGlow.material.opacity = isDark ? 0.16 : 0.28;
+    sunDisc.material.color.set(isDark ? 0xd8deff : 0xfff1b5);
+    sunDisc.material.opacity = isDark ? 0.72 : 0.96;
+
+    mountainDescriptors.forEach(function (descriptor, index) {
+      const material = descriptor.mesh.material as THREE.MeshStandardMaterial;
+      material.color.set(isDark ? (index % 2 === 0 ? 0x29364a : 0x202d40) : index % 2 === 0 ? 0x8ca0a5 : 0x748993);
+      material.opacity = isDark ? 0.88 : 0.96;
+    });
+    cloudsGroup.traverse(function (child) {
+      const material = child.material as THREE.MeshStandardMaterial | undefined;
+
+      if (material && "color" in material) {
+        material.color.set(isDark ? 0xd7e2ff : 0xffffff);
+        material.opacity = isDark ? 0.42 : 0.78;
+      }
+    });
+  }
+
   function clampCameraAboveGround() {
     const targetFloor = currentGroundLevel + currentMaxDimension * 0.14;
     const cameraFloor = currentGroundLevel + currentMaxDimension * 0.08;
@@ -1219,6 +1275,7 @@ export function createConcreteStressViewer(
     update(nextState) {
       currentState = { ...currentState, ...nextState };
       updateEnvironment(currentState);
+      updateTheme(currentState);
       updateGroundStressField(currentState);
       updateGroundStressVolume(currentState);
       updatePrismGeometry(currentState);

@@ -2,7 +2,11 @@ export interface StressInputs {
   appliedLoadN: number;
   densityKgM3: number;
   depthM: number;
+  groundPoissonRatio: number;
+  groundYoungsModulusMpa: number;
   heightM: number;
+  specimenPoissonRatio: number;
+  specimenYoungsModulusMpa: number;
   widthM: number;
 }
 
@@ -90,7 +94,11 @@ function toParams(inputs: StressInputs): StressInputs {
     appliedLoadN: Number(inputs.appliedLoadN),
     densityKgM3: Number(inputs.densityKgM3),
     depthM: Number(inputs.depthM),
+    groundPoissonRatio: Number(inputs.groundPoissonRatio),
+    groundYoungsModulusMpa: Number(inputs.groundYoungsModulusMpa),
     heightM: Number(inputs.heightM),
+    specimenPoissonRatio: Number(inputs.specimenPoissonRatio),
+    specimenYoungsModulusMpa: Number(inputs.specimenYoungsModulusMpa),
     widthM: Number(inputs.widthM),
   };
 }
@@ -145,12 +153,16 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
         return module.ccall(
           "calculate_combined_stress_pa",
           "number",
-          ["number", "number", "number", "number", "number"],
+          ["number", "number", "number", "number", "number", "number", "number", "number", "number"],
           [
             params.widthM,
             params.depthM,
             params.heightM,
             params.densityKgM3,
+            params.specimenYoungsModulusMpa,
+            params.specimenPoissonRatio,
+            params.groundYoungsModulusMpa,
+            params.groundPoissonRatio,
             params.appliedLoadN,
           ]
         ) as number;
@@ -163,12 +175,30 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
         return module.ccall(
           "calculate_stress_at_point_pa_export",
           "number",
-          ["number", "number", "number", "number", "number", "number", "number", "number", "number"],
+          [
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+            "number",
+          ],
           [
             params.widthM,
             params.depthM,
             params.heightM,
             params.densityKgM3,
+            params.specimenYoungsModulusMpa,
+            params.specimenPoissonRatio,
+            params.groundYoungsModulusMpa,
+            params.groundPoissonRatio,
             params.appliedLoadN,
             Number(point.groundDepthM),
             Number(point.x),
@@ -199,12 +229,16 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
         module.ccall(
           "print_stress_report",
           null,
-          ["number", "number", "number", "number", "number"],
+          ["number", "number", "number", "number", "number", "number", "number", "number", "number"],
           [
             params.widthM,
             params.depthM,
             params.heightM,
             params.densityKgM3,
+            params.specimenYoungsModulusMpa,
+            params.specimenPoissonRatio,
+            params.groundYoungsModulusMpa,
+            params.groundPoissonRatio,
             params.appliedLoadN,
           ]
         );
