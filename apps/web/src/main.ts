@@ -10,7 +10,9 @@ import {
 } from "@webjenga/wasm-bridge";
 
 interface ViewerEnvironmentState {
+  showFigure: boolean;
   showGround: boolean;
+  showHouse: boolean;
   showSky: boolean;
 }
 
@@ -150,6 +152,20 @@ document.querySelector("#app").innerHTML = `
                 </div>
               </div>
             </details>
+            <details class="collapse-card" open>
+              <summary>
+                <span class="collapse-card__title">
+                  <strong>References</strong>
+                  <span>Scale cues placed beside the specimen.</span>
+                </span>
+              </summary>
+              <div class="collapse-card__body">
+                <div class="toggle-row">
+                  <button class="toggle-chip" id="toggle-house" type="button">House</button>
+                  <button class="toggle-chip" id="toggle-figure" type="button">Figure</button>
+                </div>
+              </div>
+            </details>
             <details class="collapse-card">
               <summary>
                 <span class="collapse-card__title">
@@ -266,6 +282,8 @@ const viewportShell = document.getElementById("viewport-shell");
 const viewportFullscreenButton = document.getElementById("viewport-fullscreen");
 const toggleGround = document.getElementById("toggle-ground");
 const toggleSky = document.getElementById("toggle-sky");
+const toggleHouse = document.getElementById("toggle-house");
+const toggleFigure = document.getElementById("toggle-figure");
 const collapsibleCards = Array.from(document.querySelectorAll(".collapse-card"));
 
 const VIEWER_ENV_STORAGE_KEY = "webjenga.viewer.environment";
@@ -276,17 +294,19 @@ function loadViewerEnvironment(): ViewerEnvironmentState {
     const raw = window.localStorage.getItem(VIEWER_ENV_STORAGE_KEY);
 
     if (!raw) {
-      return { showGround: true, showSky: true };
+      return { showFigure: true, showGround: true, showHouse: true, showSky: true };
     }
 
     const parsed = JSON.parse(raw);
 
     return {
+      showFigure: parsed.showFigure !== false,
       showGround: parsed.showGround !== false,
+      showHouse: parsed.showHouse !== false,
       showSky: parsed.showSky !== false,
     };
   } catch (error) {
-    return { showGround: true, showSky: true };
+    return { showFigure: true, showGround: true, showHouse: true, showSky: true };
   }
 }
 
@@ -423,7 +443,9 @@ function setToggleState(button, isActive) {
 }
 
 function syncViewerEnvironmentControls() {
+  setToggleState(toggleFigure, viewerEnvironment.showFigure);
   setToggleState(toggleGround, viewerEnvironment.showGround);
+  setToggleState(toggleHouse, viewerEnvironment.showHouse);
   setToggleState(toggleSky, viewerEnvironment.showSky);
 }
 
@@ -431,7 +453,9 @@ function applyViewerEnvironment() {
   syncViewerEnvironmentControls();
   saveViewerEnvironment(viewerEnvironment);
   viewer.update({
+    showReferenceFigure: viewerEnvironment.showFigure,
     showGround: viewerEnvironment.showGround,
+    showReferenceHouse: viewerEnvironment.showHouse,
     showSky: viewerEnvironment.showSky,
   });
   requestViewportHeightSync();
@@ -753,8 +777,10 @@ function updateVolumeView(stressState: StressState) {
     sectionTopColorCss: sectionState.sectionTopColorCss,
     sectionUniformColorCss: sectionState.sectionUniformColorCss,
     groundStressField,
+    showReferenceFigure: viewerEnvironment.showFigure,
     showSection: false,
     showGround: viewerEnvironment.showGround,
+    showReferenceHouse: viewerEnvironment.showHouse,
     showSky: viewerEnvironment.showSky,
     volumeBottomColorCss: sectionState.volumeBottomColorCss,
     volumeSliceCount: 18,
@@ -822,6 +848,14 @@ async function boot() {
   });
   toggleSky.addEventListener("click", function () {
     viewerEnvironment.showSky = !viewerEnvironment.showSky;
+    applyViewerEnvironment();
+  });
+  toggleHouse.addEventListener("click", function () {
+    viewerEnvironment.showHouse = !viewerEnvironment.showHouse;
+    applyViewerEnvironment();
+  });
+  toggleFigure.addEventListener("click", function () {
+    viewerEnvironment.showFigure = !viewerEnvironment.showFigure;
     applyViewerEnvironment();
   });
   collapsibleCards.forEach(function (card) {

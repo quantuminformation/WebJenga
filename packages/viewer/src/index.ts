@@ -39,6 +39,8 @@ export interface ViewerState {
   sectionOffsetRatio: number;
   sectionTopColorCss: string;
   sectionUniformColorCss: string;
+  showReferenceFigure: boolean;
+  showReferenceHouse: boolean;
   showGround: boolean;
   showSection: boolean;
   showSky: boolean;
@@ -180,6 +182,142 @@ function createCloudCluster() {
   }
 
   return cloud;
+}
+
+function createReferenceHouse() {
+  const group = new THREE.Group();
+  const wallHeight = 1;
+  const roofHeight = 0.52;
+  const houseWidth = 1.58;
+  const houseDepth = 1.06;
+  const concreteMaterial = new THREE.MeshStandardMaterial({
+    color: 0xbfc5cc,
+    roughness: 0.96,
+    metalness: 0,
+  });
+  const roofMaterial = new THREE.MeshStandardMaterial({
+    color: 0xacb3bb,
+    roughness: 0.94,
+    metalness: 0,
+  });
+  const accentMaterial = new THREE.MeshStandardMaterial({
+    color: 0x657384,
+    roughness: 0.82,
+    metalness: 0,
+  });
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(houseWidth, wallHeight, houseDepth),
+    concreteMaterial
+  );
+  body.position.y = wallHeight * 0.5;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  const roofShape = new THREE.Shape();
+  roofShape.moveTo(-houseWidth * 0.58, 0);
+  roofShape.lineTo(0, roofHeight);
+  roofShape.lineTo(houseWidth * 0.58, 0);
+  roofShape.closePath();
+
+  const roofGeometry = new THREE.ExtrudeGeometry(roofShape, {
+    bevelEnabled: false,
+    depth: houseDepth * 1.06,
+    steps: 1,
+  });
+  roofGeometry.translate(0, wallHeight, -(houseDepth * 1.06) / 2);
+  const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+  roof.castShadow = true;
+  roof.receiveShadow = true;
+  group.add(roof);
+
+  const facadeFeatures = [
+    { height: 0.36, width: 0.24, x: -0.34, y: 0.22 },
+    { height: 0.24, width: 0.24, x: 0.28, y: 0.48 },
+    { height: 0.24, width: 0.24, x: -0.02, y: 0.48 },
+  ];
+  facadeFeatures.forEach(function (feature) {
+    const accent = new THREE.Mesh(
+      new THREE.PlaneGeometry(feature.width, feature.height),
+      accentMaterial
+    );
+    accent.position.set(feature.x, feature.y, houseDepth * 0.5 + 0.01);
+    group.add(accent);
+  });
+
+  const outline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(houseWidth, wallHeight + roofHeight, houseDepth)),
+    new THREE.LineBasicMaterial({
+      color: 0x586473,
+      transparent: true,
+      opacity: 0.22,
+    })
+  );
+  outline.position.y = (wallHeight + roofHeight) * 0.5;
+  group.add(outline);
+
+  return {
+    depth: houseDepth,
+    group,
+    height: wallHeight + roofHeight,
+    width: houseWidth,
+  };
+}
+
+function createReferenceFigure() {
+  const group = new THREE.Group();
+  const concreteMaterial = new THREE.MeshStandardMaterial({
+    color: 0xadb5be,
+    roughness: 0.97,
+    metalness: 0,
+  });
+  const accentMaterial = new THREE.MeshStandardMaterial({
+    color: 0x7f8995,
+    roughness: 0.9,
+    metalness: 0,
+  });
+
+  const legs = new THREE.Mesh(
+    new THREE.BoxGeometry(0.26, 0.82, 0.18),
+    concreteMaterial
+  );
+  legs.position.y = 0.41;
+  legs.castShadow = true;
+  legs.receiveShadow = true;
+  group.add(legs);
+
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(0.48, 0.78, 0.22),
+    concreteMaterial
+  );
+  torso.position.y = 1.18;
+  torso.castShadow = true;
+  torso.receiveShadow = true;
+  group.add(torso);
+
+  const shoulders = new THREE.Mesh(
+    new THREE.BoxGeometry(0.72, 0.14, 0.22),
+    accentMaterial
+  );
+  shoulders.position.y = 1.4;
+  group.add(shoulders);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 20, 20),
+    concreteMaterial
+  );
+  head.position.y = 1.82;
+  head.castShadow = true;
+  head.receiveShadow = true;
+  group.add(head);
+
+  return {
+    depth: 0.26,
+    group,
+    height: 2.0,
+    width: 0.72,
+  };
 }
 
 const AXIS_CONFIG = {
@@ -503,8 +641,39 @@ export function createConcreteStressViewer(
   contactShadow.renderOrder = 2;
   environmentGroup.add(contactShadow);
 
+  const referenceHouse = createReferenceHouse();
+  const referenceHouseShadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({
+      alphaMap: shadowTexture,
+      color: 0x102033,
+      depthWrite: false,
+      opacity: 0.18,
+      transparent: true,
+    })
+  );
+  referenceHouseShadow.rotation.x = -Math.PI / 2;
+  referenceHouseShadow.renderOrder = 2;
+  environmentGroup.add(referenceHouseShadow);
+  const referenceFigure = createReferenceFigure();
+  const referenceFigureShadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({
+      alphaMap: shadowTexture,
+      color: 0x102033,
+      depthWrite: false,
+      opacity: 0.12,
+      transparent: true,
+    })
+  );
+  referenceFigureShadow.rotation.x = -Math.PI / 2;
+  referenceFigureShadow.renderOrder = 2;
+  environmentGroup.add(referenceFigureShadow);
+
   const worldGroup = new THREE.Group();
   scene.add(worldGroup);
+  worldGroup.add(referenceHouse.group);
+  worldGroup.add(referenceFigure.group);
 
   const specimenGroup = new THREE.Group();
   worldGroup.add(specimenGroup);
@@ -601,6 +770,7 @@ export function createConcreteStressViewer(
   let hasFramed = false;
   let currentGroundLevel = -0.25;
   let currentMaxDimension = 1;
+  let currentSceneExtent = 1;
   let currentAxis = AXIS_CONFIG.xy;
   let currentState: ViewerState = {
     widthM: 0.1,
@@ -614,6 +784,8 @@ export function createConcreteStressViewer(
     sectionGradientMode: "uniform",
     sectionTopColorCss: "rgb(63, 125, 255)",
     sectionUniformColorCss: "rgb(88, 210, 199)",
+    showReferenceFigure: true,
+    showReferenceHouse: true,
     volumeBottomColorCss: "rgb(229, 57, 53)",
     volumeTopColorCss: "rgb(63, 125, 255)",
     volumeSliceCount: 15,
@@ -631,17 +803,18 @@ export function createConcreteStressViewer(
     camera.updateProjectionMatrix();
   }
 
-  function updateCameraEnvelope(maxDimension) {
-    currentMaxDimension = maxDimension;
-    camera.near = Math.max(0.005, maxDimension / 120);
-    camera.far = Math.max(48, maxDimension * 72);
+  function updateCameraEnvelope(sceneExtent: number) {
+    currentSceneExtent = sceneExtent;
+    currentMaxDimension = sceneExtent;
+    camera.near = Math.max(0.005, sceneExtent / 120);
+    camera.far = Math.max(48, sceneExtent * 72);
     camera.updateProjectionMatrix();
-    controls.minDistance = maxDimension * 0.9;
-    controls.maxDistance = maxDimension * 20;
+    controls.minDistance = sceneExtent * 0.9;
+    controls.maxDistance = sceneExtent * 20;
     controls.maxPolarAngle = Math.PI / 2 - 0.04;
 
     if (!hasFramed) {
-      camera.position.set(maxDimension * 2.4, maxDimension * 1.45, maxDimension * 4.2);
+      camera.position.set(sceneExtent * 2.4, sceneExtent * 1.45, sceneExtent * 4.2);
       controls.target.set(0, currentState.heightM * 0.24, 0);
       hasFramed = true;
     }
@@ -717,9 +890,33 @@ export function createConcreteStressViewer(
     const skyScale = maxDimension * 22;
     const sunDirection = new THREE.Vector3(-0.9, 0.82, -0.42).normalize();
     const horizonRadius = maxDimension * 16;
+    const referenceScale = clamp(maxDimension * 0.55, 0.9, 6.4);
+    const houseWidth = referenceHouse.width * referenceScale;
+    const houseDepth = referenceHouse.depth * referenceScale;
+    const houseHeight = referenceHouse.height * referenceScale;
+    const houseOffsetX =
+      state.widthM * 0.5 + houseWidth * 0.6 + Math.max(maxDimension * 0.22, houseWidth * 0.35);
+    const houseOffsetZ =
+      state.depthM * 0.52 + houseDepth * 0.22 + Math.min(maxDimension * 0.12, houseDepth * 0.18);
+    const figureScale = clamp(maxDimension * 0.5, 0.82, 4.6);
+    const figureWidth = referenceFigure.width * figureScale;
+    const figureDepth = referenceFigure.depth * figureScale;
+    const figureHeight = referenceFigure.height * figureScale;
+    const figureOffsetX =
+      houseOffsetX - houseWidth * 0.44 - figureWidth * 0.8 - Math.max(maxDimension * 0.08, figureWidth * 0.2);
+    const figureOffsetZ = houseOffsetZ + houseDepth * 0.26;
 
     currentGroundLevel = groundLevel;
     currentMaxDimension = maxDimension;
+    currentSceneExtent = Math.max(
+      maxDimension,
+      houseOffsetX + houseWidth * 0.55,
+      figureOffsetX + figureWidth * 0.55,
+      houseOffsetZ + houseDepth * 0.55,
+      figureOffsetZ + figureDepth * 0.55,
+      houseHeight,
+      figureHeight
+    );
 
     scene.fog.near = horizonRadius * 0.48;
     scene.fog.far = horizonRadius * 1.38;
@@ -789,6 +986,30 @@ export function createConcreteStressViewer(
       state.depthM * 2.8 + state.heightM * 0.15,
       1
     );
+
+    referenceHouse.group.visible = Boolean(state.showGround && state.showReferenceHouse);
+    referenceHouse.group.scale.setScalar(referenceScale);
+    referenceHouse.group.position.set(houseOffsetX, groundLevel, houseOffsetZ);
+
+    referenceHouseShadow.visible = Boolean(state.showGround && state.showReferenceHouse);
+    referenceHouseShadow.position.set(
+      houseOffsetX,
+      groundLevel + Math.max(maxDimension, referenceScale) * 0.003,
+      houseOffsetZ
+    );
+    referenceHouseShadow.scale.set(houseWidth * 1.35, houseDepth * 1.35, 1);
+
+    referenceFigure.group.visible = Boolean(state.showGround && state.showReferenceFigure);
+    referenceFigure.group.scale.setScalar(figureScale);
+    referenceFigure.group.position.set(figureOffsetX, groundLevel, figureOffsetZ);
+
+    referenceFigureShadow.visible = Boolean(state.showGround && state.showReferenceFigure);
+    referenceFigureShadow.position.set(
+      figureOffsetX,
+      groundLevel + Math.max(maxDimension, figureScale) * 0.003,
+      figureOffsetZ
+    );
+    referenceFigureShadow.scale.set(figureWidth * 1.5, figureDepth * 2.1, 1);
   }
 
   function clampCameraAboveGround() {
@@ -951,14 +1172,14 @@ export function createConcreteStressViewer(
       updatePrismGeometry(currentState);
       updateVolumeSlices(currentState);
       updateSectionGeometry(currentState);
-      updateCameraEnvelope(
-        Math.max(currentState.widthM, currentState.depthM, currentState.heightM, 0.15)
-      );
+      updateCameraEnvelope(currentSceneExtent);
     },
     dispose() {
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
+      disposeGroupChildren(referenceFigure.group);
+      disposeGroupChildren(referenceHouse.group);
       disposeGroupChildren(environmentGroup);
       disposeGroupChildren(volumeSlicesGroup);
       shadowTexture.dispose();
