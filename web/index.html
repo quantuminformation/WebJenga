@@ -530,7 +530,12 @@
       }
     </style>
     <script>
+      var __webjengaBuildToken = String(Date.now());
+
       var Module = {
+        locateFile: function (path) {
+          return path + "?v=" + __webjengaBuildToken;
+        },
         print: function (text) {
           var output = document.getElementById("output");
           output.textContent += text + "\n";
@@ -676,7 +681,13 @@
         </div>
       </section>
     </main>
-    <script src="main.js"></script>
+    <script>
+      (function () {
+        var script = document.createElement("script");
+        script.src = "main.js?v=" + __webjengaBuildToken;
+        document.body.appendChild(script);
+      })();
+    </script>
     <script>
       function setupConcreteStressDemo() {
         var output = document.getElementById("output");
