@@ -17,22 +17,16 @@ importers:
 
   apps/web:
     dependencies:
-      '@webjenga/viewer':
-        specifier: workspace:*
-        version: link:../../packages/viewer
       '@webjenga/wasm-bridge':
         specifier: workspace:*
         version: link:../../packages/wasm-bridge
+      three:
+        specifier: ^0.180.0
+        version: 0.180.0
     devDependencies:
       vite:
         specifier: ^5.4.19
         version: 5.4.21(@types/node@25.6.0)
-
-  packages/viewer:
-    dependencies:
-      three:
-        specifier: ^0.180.0
-        version: 0.180.0
 
   packages/wasm-bridge: {}
 

@@ -5,7 +5,7 @@ import {
   type GroundStressField,
   type GroundStressVolumeLayer,
   type ViewerProbe,
-} from "@webjenga/viewer";
+} from "./viewer";
 import {
   calculateStressState,
   loadConcreteStressRuntime,

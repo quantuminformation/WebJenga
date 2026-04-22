@@ -8,8 +8,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@webjenga/viewer": "workspace:*",
-    "@webjenga/wasm-bridge": "workspace:*"
+    "@webjenga/wasm-bridge": "workspace:*",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "vite": "^5.4.19"

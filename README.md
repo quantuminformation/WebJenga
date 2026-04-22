@@ -3,7 +3,7 @@
 This repo is now a small pnpm workspace:
 
 - `cpp/solver`: C++ engineering logic compiled to WebAssembly
-- `packages/viewer`: reusable 3D viewer package
+- `apps/web/src/viewer`: 3D viewer implementation kept inside the web app
 - `packages/wasm-bridge`: browser bridge for the generated Emscripten module
 - `apps/web`: Vite-based browser app
 

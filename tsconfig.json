@@ -17,7 +17,6 @@
     "apps/web/src/**/*.ts",
     "apps/web/src/**/*.d.ts",
     "apps/web/vite.config.ts",
-    "packages/viewer/src/**/*.ts",
     "packages/wasm-bridge/src/**/*.ts"
   ]
 }
