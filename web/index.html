@@ -202,6 +202,7 @@
       }
 
       .diagram-shell {
+        position: relative;
         border-radius: 22px;
         overflow: hidden;
         background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(232, 240, 249, 0.98));
@@ -217,6 +218,7 @@
         display: block;
         width: 100%;
         height: auto;
+        touch-action: none;
       }
 
       .section-svg text {
@@ -263,6 +265,44 @@
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 12px;
         margin-top: 14px;
+      }
+
+      .hover-card {
+        position: absolute;
+        left: 0;
+        top: 0;
+        z-index: 2;
+        min-width: 180px;
+        max-width: 240px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(15, 23, 42, 0.1);
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+        color: var(--text);
+        opacity: 0;
+        visibility: hidden;
+        transform: translate(-9999px, -9999px);
+        transition: opacity 120ms ease, visibility 120ms ease;
+        pointer-events: none;
+      }
+
+      .hover-card.is-visible {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .hover-card strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.9rem;
+      }
+
+      .hover-card span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.45;
       }
 
       .diagram-item {
@@ -738,7 +778,17 @@
                     <rect class="svg-chip" x="540" y="232" width="144" height="34" rx="17" />
                     <text class="svg-chip-text" x="612" y="254" text-anchor="middle" id="section-applied-load-label">2.5 kN applied</text>
                   </g>
+
+                  <g id="section-hover-marker" opacity="0">
+                    <circle id="section-hover-ring" r="18" fill="rgba(43, 107, 255, 0.14)" stroke="rgba(43, 107, 255, 0.5)" stroke-width="2" />
+                    <circle id="section-hover-dot" r="5" fill="#2b6bff" />
+                  </g>
                 </svg>
+                <div class="hover-card" id="hover-card">
+                  <strong id="hover-coords">x = 0.00 m, y = 0.00 m</strong>
+                  <span id="hover-stress">σ = 0.0 kPa total</span>
+                  <span id="hover-note">Uniform stress at this point</span>
+                </div>
               </div>
               <div class="diagram-legend">
                 <div class="diagram-item">
@@ -802,9 +852,34 @@
         var sectionSelfWeightLabel = document.getElementById("section-self-weight-label");
         var sectionAppliedLoadLabel = document.getElementById("section-applied-load-label");
         var sectionDimensions = document.getElementById("section-dimensions");
+        var sectionHoverMarker = document.getElementById("section-hover-marker");
+        var sectionHoverRing = document.getElementById("section-hover-ring");
+        var sectionHoverDot = document.getElementById("section-hover-dot");
+        var hoverCard = document.getElementById("hover-card");
+        var hoverCoords = document.getElementById("hover-coords");
+        var hoverStress = document.getElementById("hover-stress");
+        var hoverNote = document.getElementById("hover-note");
+        var sectionSvg = document.getElementById("section-svg");
+        var lastHover = null;
 
         var displayScalePa = 500000;
         var displayLoadScaleN = 5000;
+        var currentSection = {
+          widthM: 0.1,
+          depthM: 0.1,
+          heightM: 1.0,
+          combinedStressPa: 0,
+          selfWeightStressPa: 0,
+          appliedLoadStressPa: 0,
+          areaM2: 0.01,
+          massKg: 0,
+          selfWeightN: 0,
+          appliedLoadN: 0,
+          blockX: 200,
+          blockY: 168,
+          blockWidth: 320,
+          blockHeight: 120,
+        };
 
         function readValue(input, fallback) {
           var parsed = Number.parseFloat(input.value);
@@ -838,6 +913,79 @@
           diagramShell.classList.add("is-updating");
         }
 
+        function hideHover() {
+          hoverCard.classList.remove("is-visible");
+          sectionHoverMarker.setAttribute("opacity", "0");
+          lastHover = null;
+        }
+
+        function showHoverAt(clientX, clientY, svgX, svgY) {
+          var section = currentSection;
+          var withinX = svgX >= section.blockX && svgX <= section.blockX + section.blockWidth;
+          var withinY = svgY >= section.blockY && svgY <= section.blockY + section.blockHeight;
+
+          if (!withinX || !withinY) {
+            hideHover();
+            return;
+          }
+
+          var localX = (svgX - section.blockX) / section.blockWidth;
+          var localY = (section.blockY + section.blockHeight - svgY) / section.blockHeight;
+          var pointX = localX * section.widthM;
+          var pointY = localY * section.depthM;
+          var totalKpa = section.combinedStressPa / 1000;
+          var selfKpa = section.selfWeightStressPa / 1000;
+          var appliedKpa = section.appliedLoadStressPa / 1000;
+          var shellRect = diagramShell.getBoundingClientRect();
+          var cardWidth = hoverCard.offsetWidth || 220;
+          var cardHeight = hoverCard.offsetHeight || 84;
+          var left = clientX - shellRect.left + 18;
+          var top = clientY - shellRect.top + 18;
+
+          if (left + cardWidth > shellRect.width - 8) {
+            left = clientX - shellRect.left - cardWidth - 18;
+          }
+          if (top + cardHeight > shellRect.height - 8) {
+            top = clientY - shellRect.top - cardHeight - 18;
+          }
+
+          hoverCard.style.left = Math.max(8, left) + "px";
+          hoverCard.style.top = Math.max(8, top) + "px";
+          hoverCoords.textContent =
+            "x = " + formatFixed(pointX, 3) + " m, y = " + formatFixed(pointY, 3) + " m";
+          hoverStress.textContent =
+            "σ = " + formatFixed(totalKpa, 1) + " kPa total (" +
+            formatFixed(selfKpa, 1) + " self-weight + " + formatFixed(appliedKpa, 1) + " applied)";
+          hoverNote.textContent = "Uniform compression, so every point on the slab reads the same value.";
+          hoverCard.classList.add("is-visible");
+
+          lastHover = {
+            clientX: clientX,
+            clientY: clientY,
+            svgX: svgX,
+            svgY: svgY,
+          };
+
+          sectionHoverMarker.setAttribute("opacity", "1");
+          sectionHoverMarker.setAttribute(
+            "transform",
+            "translate(" + svgX.toFixed(1) + "," + svgY.toFixed(1) + ")"
+          );
+          sectionHoverRing.setAttribute("r", String(18 + Math.min(8, totalKpa / 50)));
+          sectionHoverDot.setAttribute("r", String(5 + Math.min(2, totalKpa / 100)));
+        }
+
+        function getSvgPointAt(clientX, clientY) {
+          var point = sectionSvg.createSVGPoint();
+          point.x = clientX;
+          point.y = clientY;
+          var matrix = sectionSvg.getScreenCTM();
+          if (!matrix) {
+            return null;
+          }
+          return point.matrixTransform(matrix.inverse());
+        }
+
         function updateSection(widthM, depthM, heightM, stressPa, massKg, selfWeightN, appliedLoadN, areaM2) {
           var footprint = widthM * depthM;
           var planScale = Math.max(0.72, Math.min(1.18, Math.sqrt(footprint / 0.01)));
@@ -854,6 +1002,23 @@
           var sectionBlockX = Math.round((720 - sectionBlockWidth) / 2);
           var sectionBlockY = 168;
 
+          currentSection = {
+            widthM: widthM,
+            depthM: depthM,
+            heightM: heightM,
+            combinedStressPa: stressPa,
+            selfWeightStressPa: selfWeightN / areaM2,
+            appliedLoadStressPa: appliedLoadN / areaM2,
+            areaM2: areaM2,
+            massKg: massKg,
+            selfWeightN: selfWeightN,
+            appliedLoadN: appliedLoadN,
+            blockX: sectionBlockX,
+            blockY: sectionBlockY,
+            blockWidth: sectionBlockWidth,
+            blockHeight: sectionBlockHeight,
+          };
+
           sectionFillTop.setAttribute("stop-color", topFill);
           sectionFillBottom.setAttribute("stop-color", bottomFill);
           sectionStressLabel.textContent = formatFixed(stressPa / 1000, 1) + " kPa";
@@ -867,8 +1032,16 @@
           diagramShell.style.boxShadow =
             "0 0 0 1px rgba(15, 23, 42, 0.08), 0 18px 40px rgba(43, 107, 255, " + (0.05 + stressRatio * 0.12).toFixed(3) + ")";
           sectionDescription.textContent =
-            formatFixed(massKg, 1) + " kg mass, " + formatFixed(heightM, 2) + " m height, " + formatForce(selfWeightN) + " self-weight, " + formatForce(appliedLoadN) + " applied load";
+            "Hover or tap the slab to read exact coordinates and stress. This load case is uniform, so every point matches the same combined value.";
           ratioLabel.textContent = Math.round(stressRatio * 100) + "% of " + formatFixed(scaleKpa, 0) + " kPa scale";
+
+          var block = document.getElementById("section-block");
+          if (block) {
+            block.setAttribute("x", String(sectionBlockX));
+            block.setAttribute("y", String(sectionBlockY));
+            block.setAttribute("width", String(sectionBlockWidth));
+            block.setAttribute("height", String(sectionBlockHeight));
+          }
 
           var loadArrow = document.getElementById("section-load-arrow");
           if (loadArrow) {
@@ -880,12 +1053,11 @@
             );
           }
 
-          var block = document.getElementById("section-block");
-          if (block) {
-            block.setAttribute("x", String(sectionBlockX));
-            block.setAttribute("y", String(sectionBlockY));
-            block.setAttribute("width", String(sectionBlockWidth));
-            block.setAttribute("height", String(sectionBlockHeight));
+          if (hoverCard.classList.contains("is-visible") && lastHover) {
+            var refreshedPoint = getSvgPointAt(lastHover.clientX, lastHover.clientY);
+            if (refreshedPoint) {
+              showHoverAt(lastHover.clientX, lastHover.clientY, refreshedPoint.x, refreshedPoint.y);
+            }
           }
 
           pulseDiagram();
@@ -929,6 +1101,44 @@
 
           updateSection(widthM, depthM, heightM, combinedStressPa, massKg, selfWeightN, appliedLoadN, areaM2);
         }
+
+        sectionSvg.addEventListener("pointermove", function (event) {
+          var svgPoint = getSvgPointAt(event.clientX, event.clientY);
+          if (!svgPoint) {
+            return;
+          }
+          showHoverAt(event.clientX, event.clientY, svgPoint.x, svgPoint.y);
+        });
+
+        sectionSvg.addEventListener("pointerdown", function (event) {
+          var svgPoint = getSvgPointAt(event.clientX, event.clientY);
+          if (!svgPoint) {
+            return;
+          }
+          try {
+            sectionSvg.setPointerCapture(event.pointerId);
+          } catch (error) {
+            // Pointer capture is not guaranteed on all browsers.
+          }
+          showHoverAt(event.clientX, event.clientY, svgPoint.x, svgPoint.y);
+        });
+
+        sectionSvg.addEventListener("pointerleave", function () {
+          hideHover();
+        });
+
+        sectionSvg.addEventListener("pointercancel", function () {
+          hideHover();
+        });
+
+        sectionSvg.addEventListener("pointerup", function (event) {
+          if (event.pointerType !== "mouse") {
+            var svgPoint = getSvgPointAt(event.clientX, event.clientY);
+            if (svgPoint) {
+              showHoverAt(event.clientX, event.clientY, svgPoint.x, svgPoint.y);
+            }
+          }
+        });
 
         width.addEventListener("input", render);
         depth.addEventListener("input", render);
