@@ -113,6 +113,7 @@
         display: grid;
         grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.05fr);
         gap: 20px;
+        align-items: start;
       }
 
       .card {
@@ -653,19 +654,25 @@
         }
       }
 
-      @media (max-width: 1320px) {
+      @media (max-width: 1160px) {
         .grid {
-          grid-template-columns: 1fr;
-        }
-
-        .diagram-legend {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: minmax(0, 0.98fr) minmax(0, 1.02fr);
+          gap: 16px;
         }
       }
 
       @media (max-width: 920px) {
         .hero {
           flex-direction: column;
+        }
+
+        .grid {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          gap: 14px;
+        }
+
+        .diagram-legend {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .stats,
@@ -677,12 +684,29 @@
 
       @media (max-width: 640px) {
         main {
-          padding: 18px 12px 28px;
+          padding: 16px 10px 24px;
+        }
+
+        .grid {
+          gap: 12px;
         }
 
         .card-inner,
         pre {
-          padding: 16px;
+          padding: 14px;
+        }
+
+        .hero {
+          margin-bottom: 18px;
+        }
+
+        .lede {
+          max-width: none;
+        }
+
+        .pill {
+          font-size: 0.84rem;
+          padding: 8px 12px;
         }
       }
     </style>
@@ -711,7 +735,7 @@
           <p class="eyebrow">C++ in the browser</p>
           <h1>Concrete stress visualiser</h1>
           <p class="lede">
-            Adjust the prism dimensions and the top load below. The browser UI updates
+            Adjust the slab dimensions and the top load below. The browser UI updates
             live, but the calculation and worked derivation still come from the compiled
             C++ module.
           </p>
