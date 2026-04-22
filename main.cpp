@@ -1,6 +1,12 @@
 #include <iomanip>
 #include <iostream>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#else
+#define EMSCRIPTEN_KEEPALIVE
+#endif
+
 struct ConcretePrism {
     double width_m;
     double depth_m;
@@ -16,7 +22,7 @@ struct StressReport {
     double stress_pa;
 };
 
-StressReport calculate_self_weight_stress(const ConcretePrism& prism) {
+StressReport calculate_self_weight_report(const ConcretePrism& prism) {
     constexpr double gravity_m_s2 = 9.80665;
     const double area_m2 = prism.width_m * prism.depth_m;
     const double volume_m3 = area_m2 * prism.height_m;
@@ -69,7 +75,43 @@ void print_report(const ConcretePrism& prism, const StressReport& report) {
               << " = " << report.stress_pa << " Pa\n";
 }
 
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE double calculate_self_weight_stress_pa(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3) {
+    const ConcretePrism prism{
+        width_m,
+        depth_m,
+        height_m,
+        density_kg_m3,
+    };
+
+    return calculate_self_weight_report(prism).stress_pa;
+}
+
+EMSCRIPTEN_KEEPALIVE void print_self_weight_report(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3) {
+    const ConcretePrism prism{
+        width_m,
+        depth_m,
+        height_m,
+        density_kg_m3,
+    };
+
+    const StressReport report = calculate_self_weight_report(prism);
+    print_report(prism, report);
+}
+
+} // extern "C"
+
 int main() {
+#ifndef __EMSCRIPTEN__
     const ConcretePrism prism{
         0.10,
         0.10,
@@ -77,7 +119,8 @@ int main() {
         2400.0,
     };
 
-    const StressReport report = calculate_self_weight_stress(prism);
+    const StressReport report = calculate_self_weight_report(prism);
     print_report(prism, report);
+#endif
     return 0;
 }
