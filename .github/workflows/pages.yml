@@ -35,7 +35,7 @@ jobs:
 
       - name: Build WebAssembly site
         shell: bash
-        run: ./scripts/build-wasm.sh
+        run: bash ./scripts/build-wasm.sh
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

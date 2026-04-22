@@ -1,10 +1,14 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-. "$HOME/opt/emsdk/emsdk_env.sh"
+source "$HOME/opt/emsdk/emsdk_env.sh"
 
 export EM_CACHE="$ROOT_DIR/.emscripten-cache"
 
