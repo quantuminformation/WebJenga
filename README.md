@@ -25,6 +25,6 @@ GitHub Pages deployment:
 
 Notes:
 
-- This first step calculates self-weight stress only.
-- It uses a simple axial model: `sigma = F / A`, with `F = m g`.
+- This step calculates combined axial stress from self-weight plus an applied top load.
+- It uses a simple axial model: `sigma_total = W / A + P / A`, with `W = m g`.
 - It is a demo for the browser visualiser, not a code-compliant structural design check.

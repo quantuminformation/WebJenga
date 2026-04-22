@@ -123,6 +123,10 @@
         gap: 14px;
       }
 
+      .field.span-2 {
+        grid-column: 1 / -1;
+      }
+
       .field {
         display: flex;
         flex-direction: column;
@@ -241,6 +245,7 @@
         --prism-shadow: rgba(0, 0, 0, 0.25);
         --prism-bright: rgba(116, 242, 179, 0.95);
         --prism-dark: rgba(24, 98, 82, 0.95);
+        --load-scale: 1;
         position: relative;
         width: var(--prism-width);
         height: var(--prism-height);
@@ -321,7 +326,8 @@
         top: -68px;
         width: 10px;
         height: 56px;
-        transform: translateX(-50%);
+        transform: translateX(-50%) scaleY(var(--load-scale));
+        transform-origin: bottom center;
         background: linear-gradient(180deg, rgba(120, 212, 255, 0.95), rgba(120, 212, 255, 0.2));
         border-radius: 999px;
         box-shadow: 0 0 16px rgba(120, 212, 255, 0.38);
@@ -375,6 +381,17 @@
         gap: 12px;
         color: var(--muted);
         font-size: 0.9rem;
+      }
+
+      .prism-detail strong {
+        display: block;
+        color: var(--text);
+        font-size: 0.98rem;
+        margin-bottom: 2px;
+      }
+
+      .prism-detail span {
+        display: block;
       }
 
       @keyframes prism-pop {
@@ -447,7 +464,7 @@
 
       .stats {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 12px;
         margin-top: 16px;
       }
@@ -532,8 +549,9 @@
           <p class="eyebrow">C++ in the browser</p>
           <h1>Concrete stress visualiser</h1>
           <p class="lede">
-            Adjust the prism dimensions below. The browser UI updates live, but the
-            calculation and worked derivation still come from the compiled C++ module.
+            Adjust the prism dimensions and the top load below. The browser UI updates
+            live, but the calculation and worked derivation still come from the compiled
+            C++ module.
           </p>
         </div>
         <div class="pill">Live demo on GitHub Pages</div>
@@ -560,6 +578,10 @@
                 <label for="density">Density (kg/m^3)</label>
                 <input id="density" type="number" min="100" step="10" value="2400" />
               </div>
+              <div class="field span-2">
+                <label for="applied-load">Applied top load (N)</label>
+                <input id="applied-load" type="number" min="0" step="50" value="2500" />
+              </div>
             </div>
 
             <div class="formula">
@@ -567,6 +589,7 @@
               <div><code>F = m g</code></div>
               <div><code>m = ρ V</code></div>
               <div><code>V = A h</code></div>
+              <div><code>σ_total = σ_self + P / A</code></div>
             </div>
           </div>
         </section>
@@ -575,10 +598,10 @@
           <div class="card-inner">
             <div class="visual-top">
               <div>
-                <h2>Live stress</h2>
+                <h2>Combined stress</h2>
                 <div class="big-number"><span id="stress-kpa">0.0</span><span class="unit">kPa</span></div>
               </div>
-              <div class="pill" id="ratio-label">0% of 50 kPa scale</div>
+              <div class="pill" id="ratio-label">0% of 500 kPa scale</div>
             </div>
 
             <div class="prism-stage">
@@ -600,8 +623,14 @@
                 </div>
               </div>
               <div class="prism-detail">
-                <span id="prism-mass-label">24.0 kg</span>
-                <span id="prism-force-label">235 N</span>
+                <span>
+                  <strong id="prism-self-weight-label">235 N</strong>
+                  <span>Self-weight</span>
+                </span>
+                <span>
+                  <strong id="prism-load-label">2.5 kN</strong>
+                  <span>Applied top load</span>
+                </span>
               </div>
             </div>
 
@@ -609,12 +638,12 @@
               <div class="gauge-track">
                 <div class="gauge-marker">
                   <span>0</span>
-                  <span>50 kPa</span>
+                  <span>500 kPa</span>
                 </div>
                 <div class="gauge-fill" id="gauge-fill"></div>
               </div>
               <div class="gauge-caption" id="gauge-caption">
-                Self-weight is tiny, so the scale is set to 50 kPa to keep the bar visible.
+                The bar shows combined stress from self-weight and the applied top load.
               </div>
             </div>
 
@@ -624,12 +653,16 @@
                 <span>Prism mass</span>
               </div>
               <div class="stat">
-                <strong id="force-value">0 N</strong>
+                <strong id="self-weight-value">0 N</strong>
                 <span>Self-weight</span>
               </div>
               <div class="stat">
+                <strong id="applied-load-value">0 N</strong>
+                <span>Applied load</span>
+              </div>
+              <div class="stat">
                 <strong id="stress-mpa">0.0000 MPa</strong>
-                <span>Stress in MPa</span>
+                <span>Combined stress</span>
               </div>
             </div>
           </div>
@@ -651,25 +684,23 @@
         var depth = document.getElementById("depth");
         var height = document.getElementById("height");
         var density = document.getElementById("density");
+        var appliedLoad = document.getElementById("applied-load");
         var stressKpa = document.getElementById("stress-kpa");
         var stressMpa = document.getElementById("stress-mpa");
         var massValue = document.getElementById("mass-value");
-        var forceValue = document.getElementById("force-value");
+        var selfWeightValue = document.getElementById("self-weight-value");
+        var appliedLoadValue = document.getElementById("applied-load-value");
         var gaugeFill = document.getElementById("gauge-fill");
         var ratioLabel = document.getElementById("ratio-label");
         var gaugeCaption = document.getElementById("gauge-caption");
         var prismModel = document.getElementById("prism-model");
         var prismStressLabel = document.getElementById("prism-stress-label");
         var prismDimensions = document.getElementById("prism-dimensions");
-        var prismMassLabel = document.getElementById("prism-mass-label");
-        var prismForceLabel = document.getElementById("prism-force-label");
+        var prismSelfWeightLabel = document.getElementById("prism-self-weight-label");
+        var prismLoadLabel = document.getElementById("prism-load-label");
 
-        var displayScalePa = 50000;
-        var prismState = {
-          width: 0.1,
-          depth: 0.1,
-          height: 1.0,
-        };
+        var displayScalePa = 500000;
+        var displayLoadScaleN = 5000;
 
         function readValue(input, fallback) {
           var parsed = Number.parseFloat(input.value);
@@ -689,10 +720,19 @@
           });
         }
 
+        function formatForce(value) {
+          if (Math.abs(value) >= 1000) {
+            return formatFixed(value / 1000, 1) + " kN";
+          }
+
+          return formatRounded(value) + " N";
+        }
+
         function updateGauge(stressPa) {
           var ratio = Math.max(0, Math.min(1, stressPa / displayScalePa));
           var hue = 120 - ratio * 95;
           var fillHeight = Math.max(2, ratio * 100);
+          var scaleKpa = displayScalePa / 1000;
 
           gaugeFill.style.height = fillHeight + "%";
           gaugeFill.style.background =
@@ -701,11 +741,11 @@
             " 88% 64%), hsl(" +
             hue +
             " 84% 35%))";
-          ratioLabel.textContent = Math.round(ratio * 100) + "% of 50 kPa scale";
+          ratioLabel.textContent = Math.round(ratio * 100) + "% of " + formatFixed(scaleKpa, 0) + " kPa scale";
           gaugeCaption.textContent =
             stressPa > displayScalePa
-              ? "The calculated stress exceeds the visual scale, so the bar is capped at 50 kPa."
-              : "Self-weight is tiny, so the scale is set to 50 kPa to keep the bar visible.";
+              ? "The calculated stress exceeds the visual scale, so the bar is capped at " + formatFixed(scaleKpa, 0) + " kPa."
+              : "The bar shows combined stress from self-weight and the applied top load.";
         }
 
         function pulsePrism() {
@@ -714,7 +754,7 @@
           prismModel.classList.add("is-updating");
         }
 
-        function updatePrism(widthM, depthM, heightM, stressPa, massKg, forceN) {
+        function updatePrism(widthM, depthM, heightM, stressPa, selfWeightN, appliedLoadN) {
           var footprint = widthM * depthM;
           var slenderness = Math.max(0.45, Math.min(1.25, heightM / 1.4));
           var planScale = Math.max(0.72, Math.min(1.18, Math.sqrt(footprint / 0.01)));
@@ -723,23 +763,22 @@
           var shadowAlpha = 0.22 + stressRatio * 0.18;
           var bright = "hsla(" + hue + ", 84%, 58%, 0.96)";
           var dark = "hsla(" + hue + ", 72%, 24%, 0.96)";
-
-          prismState.width = widthM;
-          prismState.depth = depthM;
-          prismState.height = heightM;
+          var loadRatio = Math.max(0, Math.min(1, appliedLoadN / displayLoadScaleN));
+          var loadScale = 0.55 + loadRatio * 0.9;
 
           prismModel.style.setProperty("--prism-width", Math.round(160 * planScale) + "px");
           prismModel.style.setProperty("--prism-height", Math.round(180 * slenderness) + "px");
           prismModel.style.setProperty("--prism-shadow", "rgba(0, 0, 0, " + shadowAlpha + ")");
           prismModel.style.setProperty("--prism-bright", bright);
           prismModel.style.setProperty("--prism-dark", dark);
+          prismModel.style.setProperty("--load-scale", loadScale.toFixed(3));
           prismModel.style.setProperty("width", Math.round(160 * planScale) + "px");
           prismModel.style.setProperty("height", Math.round(180 * slenderness) + "px");
           prismStressLabel.textContent = formatFixed(stressPa / 1000, 1) + " kPa";
           prismDimensions.textContent =
             formatFixed(widthM, 2) + " × " + formatFixed(depthM, 2) + " × " + formatFixed(heightM, 2) + " m";
-          prismMassLabel.textContent = formatFixed(massKg, 1) + " kg";
-          prismForceLabel.textContent = formatRounded(forceN) + " N";
+          prismSelfWeightLabel.textContent = formatForce(selfWeightN);
+          prismLoadLabel.textContent = formatForce(appliedLoadN);
 
           pulsePrism();
         }
@@ -749,41 +788,46 @@
           var depthM = readValue(depth, 0.1);
           var heightM = readValue(height, 1.0);
           var densityKgM3 = readValue(density, 2400.0);
+          var appliedLoadN = readValue(appliedLoad, 2500.0);
 
           output.textContent = "";
 
-          var stressPa = Module.ccall(
-            "calculate_self_weight_stress_pa",
+          var combinedStressPa = Module.ccall(
+            "calculate_combined_stress_pa",
             "number",
-            ["number", "number", "number", "number"],
-            [widthM, depthM, heightM, densityKgM3]
+            ["number", "number", "number", "number", "number"],
+            [widthM, depthM, heightM, densityKgM3, appliedLoadN]
           );
 
           Module.ccall(
-            "print_self_weight_report",
+            "print_stress_report",
             null,
-            ["number", "number", "number", "number"],
-            [widthM, depthM, heightM, densityKgM3]
+            ["number", "number", "number", "number", "number"],
+            [widthM, depthM, heightM, densityKgM3, appliedLoadN]
           );
 
           var areaM2 = widthM * depthM;
           var volumeM3 = areaM2 * heightM;
           var massKg = densityKgM3 * volumeM3;
-          var forceN = massKg * 9.80665;
+          var selfWeightN = massKg * 9.80665;
+          var selfWeightStressPa = selfWeightN / areaM2;
+          var appliedLoadStressPa = appliedLoadN / areaM2;
 
-          stressKpa.textContent = formatFixed(stressPa / 1000, 1);
-          stressMpa.textContent = formatFixed(stressPa / 1000000, 4) + " MPa";
+          stressKpa.textContent = formatFixed(combinedStressPa / 1000, 1);
+          stressMpa.textContent = formatFixed(combinedStressPa / 1000000, 4) + " MPa";
           massValue.textContent = formatFixed(massKg, 1) + " kg";
-          forceValue.textContent = formatRounded(forceN) + " N";
+          selfWeightValue.textContent = formatForce(selfWeightN);
+          appliedLoadValue.textContent = formatForce(appliedLoadN);
 
-          updateGauge(stressPa);
-          updatePrism(widthM, depthM, heightM, stressPa, massKg, forceN);
+          updateGauge(combinedStressPa);
+          updatePrism(widthM, depthM, heightM, combinedStressPa, selfWeightN, appliedLoadN);
         }
 
         width.addEventListener("input", render);
         depth.addEventListener("input", render);
         height.addEventListener("input", render);
         density.addEventListener("input", render);
+        appliedLoad.addEventListener("input", render);
 
         render();
       }

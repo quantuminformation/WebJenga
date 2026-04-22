@@ -19,23 +19,39 @@ struct StressReport {
     double volume_m3;
     double mass_kg;
     double self_weight_n;
-    double stress_pa;
+    double applied_load_n;
+    double self_weight_stress_pa;
+    double applied_load_stress_pa;
+    double combined_stress_pa;
 };
 
-StressReport calculate_self_weight_report(const ConcretePrism& prism) {
+StressReport calculate_stress_report(const ConcretePrism& prism, double applied_load_n) {
     constexpr double gravity_m_s2 = 9.80665;
     const double area_m2 = prism.width_m * prism.depth_m;
     const double volume_m3 = area_m2 * prism.height_m;
     const double mass_kg = prism.density_kg_m3 * volume_m3;
     const double self_weight_n = mass_kg * gravity_m_s2;
-    const double stress_pa = self_weight_n / area_m2;
+    const double self_weight_stress_pa = self_weight_n / area_m2;
+    const double applied_load_stress_pa = applied_load_n / area_m2;
+    const double combined_stress_pa = self_weight_stress_pa + applied_load_stress_pa;
 
-    return {area_m2, volume_m3, mass_kg, self_weight_n, stress_pa};
+    return {
+        area_m2,
+        volume_m3,
+        mass_kg,
+        self_weight_n,
+        applied_load_n,
+        self_weight_stress_pa,
+        applied_load_stress_pa,
+        combined_stress_pa,
+    };
 }
 
 void print_report(const ConcretePrism& prism, const StressReport& report) {
-    const double stress_kpa = report.stress_pa / 1000.0;
-    const double stress_mpa = report.stress_pa / 1'000'000.0;
+    const double self_weight_stress_kpa = report.self_weight_stress_pa / 1000.0;
+    const double applied_load_stress_kpa = report.applied_load_stress_pa / 1000.0;
+    const double combined_stress_kpa = report.combined_stress_pa / 1000.0;
+    const double combined_stress_mpa = report.combined_stress_pa / 1'000'000.0;
 
     std::cout << std::fixed << std::setprecision(4);
     std::cout << "Concrete prism stress demo\n";
@@ -62,26 +78,40 @@ void print_report(const ConcretePrism& prism, const StressReport& report) {
     std::cout << "  W = m x g\n";
     std::cout << "  W = " << report.mass_kg << " x 9.80665 = " << report.self_weight_n << " N\n\n";
 
-    std::cout << "Step 5: stress\n";
-    std::cout << "  sigma = W / A\n";
-    std::cout << "  sigma = " << report.self_weight_n << " / " << report.area_m2 << " = "
-              << report.stress_pa << " Pa\n";
-    std::cout << "  sigma = " << stress_kpa << " kPa\n";
-    std::cout << "  sigma = " << stress_mpa << " MPa\n\n";
+    std::cout << "Step 5: self-weight stress\n";
+    std::cout << "  sigma_self = W / A\n";
+    std::cout << "  sigma_self = " << report.self_weight_n << " / " << report.area_m2 << " = "
+              << report.self_weight_stress_pa << " Pa\n";
+    std::cout << "  sigma_self = " << self_weight_stress_kpa << " kPa\n\n";
 
-    std::cout << "Simplified identity for a prismatic member under self-weight:\n";
-    std::cout << "  sigma = density x g x height\n";
-    std::cout << "  sigma = " << prism.density_kg_m3 << " x 9.80665 x " << prism.height_m
-              << " = " << report.stress_pa << " Pa\n";
+    std::cout << "Step 6: applied top load stress\n";
+    std::cout << "  sigma_top = P / A\n";
+    std::cout << "  sigma_top = " << report.applied_load_n << " / " << report.area_m2 << " = "
+              << report.applied_load_stress_pa << " Pa\n";
+    std::cout << "  sigma_top = " << applied_load_stress_kpa << " kPa\n\n";
+
+    std::cout << "Step 7: combined stress\n";
+    std::cout << "  sigma_total = sigma_self + sigma_top\n";
+    std::cout << "  sigma_total = " << report.self_weight_stress_pa << " + "
+              << report.applied_load_stress_pa << " = " << report.combined_stress_pa << " Pa\n";
+    std::cout << "  sigma_total = " << combined_stress_kpa << " kPa\n";
+    std::cout << "  sigma_total = " << combined_stress_mpa << " MPa\n\n";
+
+    std::cout << "Identity for this two-load demo:\n";
+    std::cout << "  sigma_total = density x g x height + P / A\n";
+    std::cout << "  sigma_total = " << prism.density_kg_m3 << " x 9.80665 x " << prism.height_m
+              << " + " << report.applied_load_n << " / " << report.area_m2 << " = "
+              << report.combined_stress_pa << " Pa\n";
 }
 
 extern "C" {
 
-EMSCRIPTEN_KEEPALIVE double calculate_self_weight_stress_pa(
+EMSCRIPTEN_KEEPALIVE double calculate_combined_stress_pa(
     double width_m,
     double depth_m,
     double height_m,
-    double density_kg_m3) {
+    double density_kg_m3,
+    double applied_load_n) {
     const ConcretePrism prism{
         width_m,
         depth_m,
@@ -89,7 +119,32 @@ EMSCRIPTEN_KEEPALIVE double calculate_self_weight_stress_pa(
         density_kg_m3,
     };
 
-    return calculate_self_weight_report(prism).stress_pa;
+    return calculate_stress_report(prism, applied_load_n).combined_stress_pa;
+}
+
+EMSCRIPTEN_KEEPALIVE void print_stress_report(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3,
+    double applied_load_n) {
+    const ConcretePrism prism{
+        width_m,
+        depth_m,
+        height_m,
+        density_kg_m3,
+    };
+
+    const StressReport report = calculate_stress_report(prism, applied_load_n);
+    print_report(prism, report);
+}
+
+EMSCRIPTEN_KEEPALIVE double calculate_self_weight_stress_pa(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3) {
+    return calculate_combined_stress_pa(width_m, depth_m, height_m, density_kg_m3, 0.0);
 }
 
 EMSCRIPTEN_KEEPALIVE void print_self_weight_report(
@@ -97,15 +152,7 @@ EMSCRIPTEN_KEEPALIVE void print_self_weight_report(
     double depth_m,
     double height_m,
     double density_kg_m3) {
-    const ConcretePrism prism{
-        width_m,
-        depth_m,
-        height_m,
-        density_kg_m3,
-    };
-
-    const StressReport report = calculate_self_weight_report(prism);
-    print_report(prism, report);
+    print_stress_report(width_m, depth_m, height_m, density_kg_m3, 0.0);
 }
 
 } // extern "C"
@@ -119,7 +166,7 @@ int main() {
         2400.0,
     };
 
-    const StressReport report = calculate_self_weight_report(prism);
+    const StressReport report = calculate_stress_report(prism, 2500.0);
     print_report(prism, report);
 #endif
     return 0;
