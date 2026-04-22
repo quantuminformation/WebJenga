@@ -186,10 +186,10 @@ function createCloudCluster() {
 
 function createReferenceHouse() {
   const group = new THREE.Group();
-  const wallHeight = 1;
-  const roofHeight = 0.52;
-  const houseWidth = 1.58;
-  const houseDepth = 1.06;
+  const wallHeight = 3.1;
+  const roofHeight = 2.2;
+  const houseWidth = 8.4;
+  const houseDepth = 6.8;
   const concreteMaterial = new THREE.MeshStandardMaterial({
     color: 0xbfc5cc,
     roughness: 0.96,
@@ -216,9 +216,9 @@ function createReferenceHouse() {
   group.add(body);
 
   const roofShape = new THREE.Shape();
-  roofShape.moveTo(-houseWidth * 0.58, 0);
+  roofShape.moveTo(-houseWidth * 0.56, 0);
   roofShape.lineTo(0, roofHeight);
-  roofShape.lineTo(houseWidth * 0.58, 0);
+  roofShape.lineTo(houseWidth * 0.56, 0);
   roofShape.closePath();
 
   const roofGeometry = new THREE.ExtrudeGeometry(roofShape, {
@@ -233,9 +233,9 @@ function createReferenceHouse() {
   group.add(roof);
 
   const facadeFeatures = [
-    { height: 0.36, width: 0.24, x: -0.34, y: 0.22 },
-    { height: 0.24, width: 0.24, x: 0.28, y: 0.48 },
-    { height: 0.24, width: 0.24, x: -0.02, y: 0.48 },
+    { height: 2.05, width: 0.96, x: -2.05, y: 1.02 },
+    { height: 1.2, width: 1.36, x: 1.95, y: 1.82 },
+    { height: 1.2, width: 1.36, x: 0.2, y: 1.82 },
   ];
   facadeFeatures.forEach(function (feature) {
     const accent = new THREE.Mesh(
@@ -278,45 +278,52 @@ function createReferenceFigure() {
     metalness: 0,
   });
 
-  const legs = new THREE.Mesh(
-    new THREE.BoxGeometry(0.26, 0.82, 0.18),
+  const leftLeg = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.09, 0.88, 12),
     concreteMaterial
   );
-  legs.position.y = 0.41;
-  legs.castShadow = true;
-  legs.receiveShadow = true;
-  group.add(legs);
+  leftLeg.position.set(-0.09, 0.44, 0);
+  leftLeg.castShadow = true;
+  leftLeg.receiveShadow = true;
+  group.add(leftLeg);
+
+  const rightLeg = leftLeg.clone();
+  rightLeg.position.x = 0.09;
+  group.add(rightLeg);
 
   const torso = new THREE.Mesh(
-    new THREE.BoxGeometry(0.48, 0.78, 0.22),
+    new THREE.CapsuleGeometry(0.18, 0.52, 6, 12),
     concreteMaterial
   );
-  torso.position.y = 1.18;
+  torso.position.y = 1.12;
   torso.castShadow = true;
   torso.receiveShadow = true;
   group.add(torso);
 
-  const shoulders = new THREE.Mesh(
-    new THREE.BoxGeometry(0.72, 0.14, 0.22),
+  const leftArm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.06, 0.68, 12),
     accentMaterial
   );
-  shoulders.position.y = 1.4;
-  group.add(shoulders);
+  leftArm.position.set(-0.27, 1.08, 0);
+  leftArm.rotation.z = 0.18;
+  group.add(leftArm);
 
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.18, 20, 20),
-    concreteMaterial
-  );
-  head.position.y = 1.82;
+  const rightArm = leftArm.clone();
+  rightArm.position.x = 0.27;
+  rightArm.rotation.z = -0.18;
+  group.add(rightArm);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 20, 20), concreteMaterial);
+  head.position.y = 1.69;
   head.castShadow = true;
   head.receiveShadow = true;
   group.add(head);
 
   return {
-    depth: 0.26,
+    depth: 0.34,
     group,
-    height: 2.0,
-    width: 0.72,
+    height: 1.82,
+    width: 0.62,
   };
 }
 
@@ -890,21 +897,18 @@ export function createConcreteStressViewer(
     const skyScale = maxDimension * 22;
     const sunDirection = new THREE.Vector3(-0.9, 0.82, -0.42).normalize();
     const horizonRadius = maxDimension * 16;
-    const referenceScale = clamp(maxDimension * 0.55, 0.9, 6.4);
-    const houseWidth = referenceHouse.width * referenceScale;
-    const houseDepth = referenceHouse.depth * referenceScale;
-    const houseHeight = referenceHouse.height * referenceScale;
+    const houseWidth = referenceHouse.width;
+    const houseDepth = referenceHouse.depth;
+    const houseHeight = referenceHouse.height;
     const houseOffsetX =
-      state.widthM * 0.5 + houseWidth * 0.6 + Math.max(maxDimension * 0.22, houseWidth * 0.35);
+      state.widthM * 0.5 + houseWidth * 0.5 + 1.8;
     const houseOffsetZ =
-      state.depthM * 0.52 + houseDepth * 0.22 + Math.min(maxDimension * 0.12, houseDepth * 0.18);
-    const figureScale = clamp(maxDimension * 0.5, 0.82, 4.6);
-    const figureWidth = referenceFigure.width * figureScale;
-    const figureDepth = referenceFigure.depth * figureScale;
-    const figureHeight = referenceFigure.height * figureScale;
-    const figureOffsetX =
-      houseOffsetX - houseWidth * 0.44 - figureWidth * 0.8 - Math.max(maxDimension * 0.08, figureWidth * 0.2);
-    const figureOffsetZ = houseOffsetZ + houseDepth * 0.26;
+      Math.max(state.depthM * 0.5 + houseDepth * 0.1, houseDepth * 0.12);
+    const figureWidth = referenceFigure.width;
+    const figureDepth = referenceFigure.depth;
+    const figureHeight = referenceFigure.height;
+    const figureOffsetX = houseOffsetX - houseWidth * 0.22;
+    const figureOffsetZ = houseOffsetZ + houseDepth * 0.34;
 
     currentGroundLevel = groundLevel;
     currentMaxDimension = maxDimension;
@@ -988,25 +992,25 @@ export function createConcreteStressViewer(
     );
 
     referenceHouse.group.visible = Boolean(state.showGround && state.showReferenceHouse);
-    referenceHouse.group.scale.setScalar(referenceScale);
+    referenceHouse.group.scale.setScalar(1);
     referenceHouse.group.position.set(houseOffsetX, groundLevel, houseOffsetZ);
 
     referenceHouseShadow.visible = Boolean(state.showGround && state.showReferenceHouse);
     referenceHouseShadow.position.set(
       houseOffsetX,
-      groundLevel + Math.max(maxDimension, referenceScale) * 0.003,
+      groundLevel + Math.max(maxDimension, 1) * 0.003,
       houseOffsetZ
     );
     referenceHouseShadow.scale.set(houseWidth * 1.35, houseDepth * 1.35, 1);
 
     referenceFigure.group.visible = Boolean(state.showGround && state.showReferenceFigure);
-    referenceFigure.group.scale.setScalar(figureScale);
+    referenceFigure.group.scale.setScalar(1);
     referenceFigure.group.position.set(figureOffsetX, groundLevel, figureOffsetZ);
 
     referenceFigureShadow.visible = Boolean(state.showGround && state.showReferenceFigure);
     referenceFigureShadow.position.set(
       figureOffsetX,
-      groundLevel + Math.max(maxDimension, figureScale) * 0.003,
+      groundLevel + Math.max(maxDimension, 1) * 0.003,
       figureOffsetZ
     );
     referenceFigureShadow.scale.set(figureWidth * 1.5, figureDepth * 2.1, 1);

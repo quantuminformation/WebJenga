@@ -28,6 +28,8 @@ interface StressBounds {
 }
 
 interface DisplaySectionState extends StressState {
+  fieldRangeMaxPa: number;
+  fieldRangeMinPa: number;
   groundDepthM: number;
   rangeMaxPa: number;
   rangeMinPa: number;
@@ -170,7 +172,7 @@ document.querySelector("#app").innerHTML = `
               <summary>
                 <span class="collapse-card__title">
                   <strong>Relative stress scale</strong>
-                  <span>Adaptive colour range for the active load case.</span>
+                  <span>Actual field range, with colours mapped to a concrete reference capacity.</span>
                 </span>
               </summary>
               <div class="collapse-card__body">
@@ -181,15 +183,15 @@ document.querySelector("#app").innerHTML = `
                   <div class="stress-scale-labels">
                     <div>
                       <strong id="stress-range-max">0.0 kPa</strong>
-                      <span>Base / max</span>
+                      <span>Concrete reference max</span>
                     </div>
                     <div>
                       <strong id="stress-range-mid">0.0 kPa</strong>
-                      <span>Mid-height</span>
+                      <span>Current field max</span>
                     </div>
                     <div>
                       <strong id="stress-range-min">0.0 kPa</strong>
-                      <span>Top / min</span>
+                      <span>Zero stress</span>
                     </div>
                   </div>
                 </div>
@@ -319,6 +321,7 @@ function saveViewerEnvironment(environment: ViewerEnvironmentState) {
 }
 
 const viewerEnvironment = loadViewerEnvironment();
+const CONCRETE_REFERENCE_MAX_PA = 40_000_000;
 const GROUND_FIELD_COLUMNS = 29;
 const GROUND_FIELD_ROWS = 29;
 const GROUND_SURFACE_SAMPLE_OFFSET_M = 0.0001;
@@ -406,6 +409,8 @@ let currentSection = {
   combinedStressPa: 0,
   densityKgM3: 2400,
   depthM: 0.1,
+  fieldRangeMaxPa: 500000,
+  fieldRangeMinPa: 0,
   groundDepthM: 1.5,
   heightM: 1,
   massKg: 24,
@@ -510,9 +515,9 @@ function getStressRatio(stressPa, minPa, maxPa) {
 
 function getStressColor(ratio) {
   const stops = [
-    { at: 0.0, color: { b: 255, g: 125, r: 63 } },
-    { at: 0.38, color: { b: 199, g: 210, r: 88 } },
-    { at: 0.7, color: { b: 78, g: 192, r: 243 } },
+    { at: 0.0, color: { b: 232, g: 168, r: 84 } },
+    { at: 0.18, color: { b: 201, g: 212, r: 76 } },
+    { at: 0.55, color: { b: 79, g: 188, r: 244 } },
     { at: 1.0, color: { b: 53, g: 57, r: 229 } },
   ];
 
@@ -527,6 +532,10 @@ function getStressColor(ratio) {
   }
 
   return stops[stops.length - 1].color;
+}
+
+function getMaterialStressScaleMaxPa(fieldMaxPa: number) {
+  return Math.max(CONCRETE_REFERENCE_MAX_PA, fieldMaxPa);
 }
 
 function formatForce(value) {
@@ -563,17 +572,22 @@ function getVolumeStressState(bounds: StressBounds): {
   volumeBottomColorCss: string;
   volumeTopColorCss: string;
 } {
-  const minColor = getStressColor(0);
-  const maxColor = getStressColor(1);
+  const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
+  const topRatio = getStressRatio(bounds.min, 0, materialScaleMaxPa);
+  const bottomRatio = getStressRatio(bounds.max, 0, materialScaleMaxPa);
+  const representativeStressPa = bounds.min + (bounds.max - bounds.min) / 2;
+  const representativeRatio = getStressRatio(representativeStressPa, 0, materialScaleMaxPa);
+  const topColor = getStressColor(topRatio);
+  const bottomColor = getStressColor(bottomRatio);
 
   return {
-    representativeStressPa: bounds.min + (bounds.max - bounds.min) / 2,
-    sectionBottomColorCss: colorToString(maxColor),
+    representativeStressPa,
+    sectionBottomColorCss: colorToString(bottomColor),
     sectionGradientMode: "vertical",
-    sectionTopColorCss: colorToString(minColor),
-    sectionUniformColorCss: colorToString(getStressColor(0.5)),
-    volumeBottomColorCss: colorToString(maxColor),
-    volumeTopColorCss: colorToString(minColor),
+    sectionTopColorCss: colorToString(topColor),
+    sectionUniformColorCss: colorToString(getStressColor(representativeRatio)),
+    volumeBottomColorCss: colorToString(bottomColor),
+    volumeTopColorCss: colorToString(topColor),
   };
 }
 
@@ -586,6 +600,7 @@ function buildGroundStressField(
   const extent = getGroundFieldExtent(stressState);
   const colors = [];
   const y = -stressState.heightM / 2 - GROUND_SURFACE_SAMPLE_OFFSET_M;
+  const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
 
   for (let rowIndex = 0; rowIndex < GROUND_FIELD_ROWS; rowIndex += 1) {
     const zRatio = rowIndex / Math.max(GROUND_FIELD_ROWS - 1, 1);
@@ -600,7 +615,7 @@ function buildGroundStressField(
         y,
         z,
       });
-      const ratio = getStressRatio(stressPa, bounds.min, bounds.max);
+      const ratio = getStressRatio(stressPa, 0, materialScaleMaxPa);
       const color = getStressColor(ratio);
 
       colors.push(color.r / 255, color.g / 255, color.b / 255);
@@ -643,7 +658,7 @@ function getGroundStressField(
 }
 
 function getReadoutStressPa(sectionState: DisplaySectionState) {
-  return sectionState.rangeMinPa + (sectionState.rangeMaxPa - sectionState.rangeMinPa) / 2;
+  return sectionState.fieldRangeMaxPa;
 }
 
 function hideHover() {
@@ -659,11 +674,11 @@ function hideHover() {
   stressReadoutTitle.textContent = currentSection.sectionLabel;
   stressBarMarker.style.top = (100 - readoutRatio * 100) + "%";
   stressReadoutBody.textContent =
-    "Stress ramps through the full height of the prism: top / low is " +
-    formatFixed(currentSection.rangeMinPa / 1000, 1) +
-    " kPa and base / high is " +
-    formatFixed(currentSection.rangeMaxPa / 1000, 1) +
-    " kPa. Hover the specimen or the ground to sample surface stress.";
+    "Field range is " +
+    formatFixed(currentSection.fieldRangeMinPa / 1000, 1) +
+    " to " +
+    formatFixed(currentSection.fieldRangeMaxPa / 1000, 1) +
+    " kPa, while colours are referenced against a 40.0 MPa concrete capacity.";
 }
 
 function showHoverProbe(probe: ViewerProbe) {
@@ -718,15 +733,16 @@ function showHoverProbe(probe: ViewerProbe) {
       formatFixed(selfKpa, 1) + " self + " + formatFixed(appliedKpa, 1) + " applied)";
     hoverNote.textContent =
       "Specimen surface point. This point sits at " +
-      Math.round(stressRatio * 100) + "% of the active colour range.";
+      formatFixed(stressRatio * 100, 1) + "% of the concrete reference capacity scale.";
     stressReadoutTitle.textContent = "Probe on specimen";
   }
 
   hoverSwatchIndicator.style.width = Math.round(stressRatio * 100) + "%";
   stressReadoutBody.textContent =
-    "Point stress " + formatFixed(totalKpa, 1) + " kPa, within a live range of " +
-    formatFixed(currentSection.rangeMinPa / 1000, 1) + " to " +
-    formatFixed(currentSection.rangeMaxPa / 1000, 1) + " kPa.";
+    "Point stress " + formatFixed(totalKpa, 1) + " kPa. Current field range is " +
+    formatFixed(currentSection.fieldRangeMinPa / 1000, 1) + " to " +
+    formatFixed(currentSection.fieldRangeMaxPa / 1000, 1) +
+    " kPa, coloured against a 40.0 MPa concrete reference.";
   stressBarMarker.style.top = (100 - stressRatio * 100) + "%";
   hoverCard.classList.add("is-visible");
 }
@@ -744,13 +760,16 @@ function updateVolumeView(stressState: StressState) {
   const sectionState = getVolumeStressState(bounds);
   const groundDepthM = getGroundDepthM(stressState);
   const groundStressField = getGroundStressField(runtime, stressState, bounds, groundDepthM);
-  const stressRatio = getStressRatio(sectionState.representativeStressPa, bounds.min, bounds.max);
+  const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
+  const stressRatio = getStressRatio(sectionState.representativeStressPa, 0, materialScaleMaxPa);
 
   currentSection = {
     ...stressState,
+    fieldRangeMaxPa: bounds.max,
+    fieldRangeMinPa: bounds.min,
     groundDepthM,
-    rangeMaxPa: bounds.max,
-    rangeMinPa: bounds.min,
+    rangeMaxPa: materialScaleMaxPa,
+    rangeMinPa: 0,
     sectionLabel: "Whole volume",
   };
 
@@ -759,12 +778,11 @@ function updateVolumeView(stressState: StressState) {
     formatFixed(stressState.heightM, 2) + " x " +
     formatFixed(stressState.depthM, 2) + " m prism";
   ratioLabel.textContent =
-    "Top " + formatFixed(bounds.min / 1000, 1) + " to base " +
+    "Field " + formatFixed(bounds.min / 1000, 1) + " to " +
     formatFixed(bounds.max / 1000, 1) + " kPa";
-  stressRangeMax.textContent = formatFixed(bounds.max / 1000, 1) + " kPa";
-  stressRangeMid.textContent =
-    formatFixed((bounds.min + (bounds.max - bounds.min) / 2) / 1000, 1) + " kPa";
-  stressRangeMin.textContent = formatFixed(bounds.min / 1000, 1) + " kPa";
+  stressRangeMax.textContent = formatFixed(materialScaleMaxPa / 1_000_000, 1) + " MPa";
+  stressRangeMid.textContent = formatFixed(bounds.max / 1000, 1) + " kPa";
+  stressRangeMin.textContent = "0.0 kPa";
   stressBarMarker.style.top = (100 - stressRatio * 100) + "%";
   hoverSwatchIndicator.style.width = Math.round(stressRatio * 100) + "%";
   stressReadoutTitle.textContent = "Whole volume gradient";
