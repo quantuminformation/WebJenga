@@ -111,7 +111,7 @@
 
       .grid {
         display: grid;
-        grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
+        grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.05fr);
         gap: 20px;
       }
 
@@ -208,10 +208,6 @@
         background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(232, 240, 249, 0.98));
         border: 1px solid rgba(15, 23, 42, 0.08);
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
-      }
-
-      .diagram-shell.is-updating {
-        animation: section-pop 420ms ease;
       }
 
       .section-svg {
@@ -616,15 +612,25 @@
         color: #d8e6ff;
       }
 
-      @keyframes section-pop {
+      @keyframes section-stress-flash {
         0% {
-          transform: translateY(0) scale(1);
+          filter: brightness(1) saturate(1);
         }
-        35% {
-          transform: translateY(-4px) scale(1.01);
+        40% {
+          filter: brightness(1.08) saturate(1.06);
         }
         100% {
-          transform: translateY(0) scale(1);
+          filter: brightness(1) saturate(1);
+        }
+      }
+
+      @media (max-width: 1320px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .diagram-legend {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
 
@@ -633,7 +639,6 @@
           flex-direction: column;
         }
 
-        .grid,
         .stats,
         .field-grid,
         .diagram-legend {
@@ -860,6 +865,7 @@
         var hoverStress = document.getElementById("hover-stress");
         var hoverNote = document.getElementById("hover-note");
         var sectionSvg = document.getElementById("section-svg");
+        var sectionBlock = document.getElementById("section-block");
         var lastHover = null;
 
         var displayScalePa = 500000;
@@ -907,12 +913,6 @@
           return formatRounded(value) + " N";
         }
 
-        function pulseDiagram() {
-          diagramShell.classList.remove("is-updating");
-          void diagramShell.offsetWidth;
-          diagramShell.classList.add("is-updating");
-        }
-
         function hideHover() {
           hoverCard.classList.remove("is-visible");
           sectionHoverMarker.setAttribute("opacity", "0");
@@ -956,7 +956,7 @@
           hoverStress.textContent =
             "σ = " + formatFixed(totalKpa, 1) + " kPa total (" +
             formatFixed(selfKpa, 1) + " self-weight + " + formatFixed(appliedKpa, 1) + " applied)";
-          hoverNote.textContent = "Uniform compression, so every point on the slab reads the same value.";
+          hoverNote.textContent = "Uniform compression: this load case gives the same stress at every point.";
           hoverCard.classList.add("is-visible");
 
           lastHover = {
@@ -994,8 +994,7 @@
           var topFill = "hsla(" + hue + ", 92%, 94%, 1)";
           var bottomFill = "hsla(" + hue + ", 88%, 58%, 1)";
           var loadRatio = Math.max(0, Math.min(1, appliedLoadN / displayLoadScaleN));
-          var loadWidth = 32 + loadRatio * 84;
-          var loadHeight = 54 + loadRatio * 58;
+          var loadStroke = 10 + loadRatio * 4;
           var scaleKpa = displayScalePa / 1000;
           var sectionBlockWidth = Math.round(320 * planScale);
           var sectionBlockHeight = 128;
@@ -1029,28 +1028,25 @@
           sectionLoadLabel.textContent = formatForce(appliedLoadN) + " applied load";
           sectionSelfWeightLabel.textContent = formatForce(selfWeightN) + " self-weight";
           sectionAppliedLoadLabel.textContent = formatForce(appliedLoadN);
-          diagramShell.style.boxShadow =
-            "0 0 0 1px rgba(15, 23, 42, 0.08), 0 18px 40px rgba(43, 107, 255, " + (0.05 + stressRatio * 0.12).toFixed(3) + ")";
           sectionDescription.textContent =
             "Hover or tap the slab to read exact coordinates and stress. This load case is uniform, so every point matches the same combined value.";
           ratioLabel.textContent = Math.round(stressRatio * 100) + "% of " + formatFixed(scaleKpa, 0) + " kPa scale";
 
-          var block = document.getElementById("section-block");
-          if (block) {
-            block.setAttribute("x", String(sectionBlockX));
-            block.setAttribute("y", String(sectionBlockY));
-            block.setAttribute("width", String(sectionBlockWidth));
-            block.setAttribute("height", String(sectionBlockHeight));
+          if (sectionBlock) {
+            sectionBlock.setAttribute("x", String(sectionBlockX));
+            sectionBlock.setAttribute("y", String(sectionBlockY));
+            sectionBlock.setAttribute("width", String(sectionBlockWidth));
+            sectionBlock.setAttribute("height", String(sectionBlockHeight));
+            sectionBlock.style.animation = "none";
+            void sectionBlock.offsetWidth;
+            sectionBlock.style.animation = "section-stress-flash 360ms ease";
           }
 
           var loadArrow = document.getElementById("section-load-arrow");
           if (loadArrow) {
-            loadArrow.setAttribute("transform", "translate(" + Math.round((loadRatio - 0.5) * 12) + ",0)");
-            loadArrow.querySelector("line").setAttribute("y2", String(110 + loadHeight / 2));
-            loadArrow.querySelector("polygon").setAttribute(
-              "points",
-              "360,26 " + (360 - Math.round(loadWidth / 2)) + ",50 " + (360 + Math.round(loadWidth / 2)) + ",50"
-            );
+            loadArrow.querySelector("line").setAttribute("stroke-width", String(loadStroke));
+            loadArrow.querySelector("line").setAttribute("opacity", String(0.72 + loadRatio * 0.28));
+            loadArrow.querySelector("polygon").setAttribute("opacity", String(0.82 + loadRatio * 0.18));
           }
 
           if (hoverCard.classList.contains("is-visible") && lastHover) {
@@ -1059,8 +1055,6 @@
               showHoverAt(lastHover.clientX, lastHover.clientY, refreshedPoint.x, refreshedPoint.y);
             }
           }
-
-          pulseDiagram();
         }
 
         function render() {
