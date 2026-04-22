@@ -17,6 +17,15 @@ export interface GroundStressVolumeLayer extends GroundStressField {
   yM: number;
 }
 
+export interface StressFlowPath {
+  axis: "xz" | "yz";
+  groundY: number;
+  horizontalM: number;
+  offsetM: number;
+  pointY: number;
+  topY: number;
+}
+
 export interface ViewerProbeCoordinate {
   label: string;
   value: number;
@@ -52,6 +61,7 @@ export interface ViewerState {
   showGroundVolume: boolean;
   showSection: boolean;
   showSky: boolean;
+  stressFlowPath: StressFlowPath | null;
   theme: "dark" | "light";
   volumeBottomColorCss: string;
   volumeSliceCount: number;
@@ -784,6 +794,10 @@ export function createConcreteStressViewer(
   hoverMarker.renderOrder = 5;
   worldGroup.add(hoverMarker);
 
+  const stressFlowGroup = new THREE.Group();
+  stressFlowGroup.visible = false;
+  worldGroup.add(stressFlowGroup);
+
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let pointerInside = false;
@@ -813,6 +827,7 @@ export function createConcreteStressViewer(
     showGround: true,
     showGroundVolume: true,
     showSky: true,
+    stressFlowPath: null,
     theme: "light",
     groundStressField: null,
     groundStressVolumeLayers: null,
@@ -832,13 +847,23 @@ export function createConcreteStressViewer(
     camera.near = Math.max(0.005, sceneExtent / 120);
     camera.far = Math.max(48, sceneExtent * 72);
     camera.updateProjectionMatrix();
-    controls.minDistance = sceneExtent * 0.9;
-    controls.maxDistance = sceneExtent * 20;
+    controls.minDistance = sceneExtent * 0.42;
+    controls.maxDistance = sceneExtent * 14;
     controls.maxPolarAngle = Math.PI / 2 - 0.04;
 
-    if (!hasFramed) {
-      camera.position.set(sceneExtent * 2.4, sceneExtent * 1.45, sceneExtent * 4.2);
-      controls.target.set(0, currentState.heightM * 0.24, 0);
+    const desiredDistance = sceneExtent * 2.15;
+    const currentDistance = camera.position.distanceTo(controls.target);
+
+    if (!hasFramed || currentDistance > desiredDistance * 2.2 || currentDistance < desiredDistance * 0.45) {
+      const direction = camera.position
+        .clone()
+        .sub(controls.target)
+        .normalize();
+      if (direction.lengthSq() < 1e-6) {
+        direction.set(0.62, 0.42, 0.66).normalize();
+      }
+      controls.target.set(0, currentState.heightM * 0.16, 0);
+      camera.position.copy(controls.target.clone().add(direction.multiplyScalar(desiredDistance)));
       hasFramed = true;
     }
 
@@ -928,15 +953,7 @@ export function createConcreteStressViewer(
 
     currentGroundLevel = groundLevel;
     currentMaxDimension = maxDimension;
-    currentSceneExtent = Math.max(
-      maxDimension,
-      houseOffsetX + houseWidth * 0.55,
-      figureOffsetX + figureWidth * 0.55,
-      houseOffsetZ + houseDepth * 0.55,
-      figureOffsetZ + figureDepth * 0.55,
-      houseHeight,
-      figureHeight
-    );
+    currentSceneExtent = Math.max(maxDimension * 1.85, 1.9);
 
     scene.fog.near = horizonRadius * 0.48;
     scene.fog.far = horizonRadius * 1.38;
@@ -1184,6 +1201,86 @@ export function createConcreteStressViewer(
     });
   }
 
+  function updateStressFlowPath(state) {
+    disposeGroupChildren(stressFlowGroup);
+
+    if (!state.stressFlowPath) {
+      stressFlowGroup.visible = false;
+      return;
+    }
+
+    stressFlowGroup.visible = true;
+
+    const horizontalAxis = state.stressFlowPath.axis === "xz" ? "x" : "z";
+    const anchor = new THREE.Vector3(
+      horizontalAxis === "x" ? state.stressFlowPath.horizontalM : state.stressFlowPath.offsetM,
+      state.stressFlowPath.pointY,
+      horizontalAxis === "x" ? state.stressFlowPath.offsetM : state.stressFlowPath.horizontalM
+    );
+    const topPoint = new THREE.Vector3(anchor.x, state.stressFlowPath.topY, anchor.z);
+    const basePoint = new THREE.Vector3(anchor.x, -state.heightM / 2, anchor.z);
+    const groundPoint = new THREE.Vector3(anchor.x, state.stressFlowPath.groundY, anchor.z);
+    const spreadOffset = Math.max(Math.max(state.widthM, state.depthM) * 0.28, 0.14);
+    const leftGroundPoint =
+      horizontalAxis === "x"
+        ? new THREE.Vector3(anchor.x - spreadOffset, groundPoint.y, anchor.z)
+        : new THREE.Vector3(anchor.x, groundPoint.y, anchor.z - spreadOffset);
+    const rightGroundPoint =
+      horizontalAxis === "x"
+        ? new THREE.Vector3(anchor.x + spreadOffset, groundPoint.y, anchor.z)
+        : new THREE.Vector3(anchor.x, groundPoint.y, anchor.z + spreadOffset);
+    const isDark = state.theme === "dark";
+    const flowColor = new THREE.Color(isDark ? 0x8db5ff : 0x2b6bff);
+
+    const pathMaterial = new THREE.LineBasicMaterial({
+      color: flowColor,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const pathGeometry = new THREE.BufferGeometry().setFromPoints([topPoint, anchor, basePoint, groundPoint]);
+    const pathLine = new THREE.Line(pathGeometry, pathMaterial);
+    pathLine.renderOrder = 5;
+    stressFlowGroup.add(pathLine);
+
+    [
+      { direction: new THREE.Vector3(0, -1, 0), origin: topPoint, length: Math.max(state.heightM * 0.18, 0.18) },
+      {
+        direction: leftGroundPoint.clone().sub(basePoint).normalize(),
+        origin: basePoint,
+        length: leftGroundPoint.distanceTo(basePoint),
+      },
+      {
+        direction: rightGroundPoint.clone().sub(basePoint).normalize(),
+        origin: basePoint,
+        length: rightGroundPoint.distanceTo(basePoint),
+      },
+    ].forEach(function (descriptor) {
+      const arrow = new THREE.ArrowHelper(
+        descriptor.direction,
+        descriptor.origin,
+        descriptor.length,
+        flowColor.getHex(),
+        Math.min(0.22, descriptor.length * 0.28),
+        Math.min(0.12, descriptor.length * 0.14)
+      );
+      arrow.line.material.transparent = true;
+      arrow.line.material.opacity = 0.88;
+      arrow.cone.material.transparent = true;
+      arrow.cone.material.opacity = 0.96;
+      stressFlowGroup.add(arrow);
+    });
+
+    const pointMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(Math.max(Math.min(state.widthM, state.depthM) * 0.12, 0.03), 18, 18),
+      new THREE.MeshBasicMaterial({
+        color: isDark ? 0x54d0bf : 0x0f9f8f,
+      })
+    );
+    pointMarker.position.copy(anchor);
+    pointMarker.renderOrder = 6;
+    stressFlowGroup.add(pointMarker);
+  }
+
   function toProbePayload(event, hit): ViewerProbe {
     const isGroundHit = hit.object === groundStressMesh;
     const pointInSpecimen = specimenGroup.worldToLocal(hit.point.clone());
@@ -1278,6 +1375,7 @@ export function createConcreteStressViewer(
       updateTheme(currentState);
       updateGroundStressField(currentState);
       updateGroundStressVolume(currentState);
+      updateStressFlowPath(currentState);
       updatePrismGeometry(currentState);
       updateVolumeSlices(currentState);
       updateSectionGeometry(currentState);
@@ -1291,6 +1389,7 @@ export function createConcreteStressViewer(
       disposeGroupChildren(referenceHouse.group);
       disposeGroupChildren(environmentGroup);
       disposeGroupChildren(groundVolumeGroup);
+      disposeGroupChildren(stressFlowGroup);
       disposeGroupChildren(volumeSlicesGroup);
       shadowTexture.dispose();
       groundTexture.dispose();

@@ -59,6 +59,26 @@ interface VerticalSectionField extends GroundStressField {
   yMinM: number;
 }
 
+interface StressFlowSelection {
+  axis: "xz" | "yz";
+  horizontalM: number;
+  rowIndex: number;
+  stressPa: number;
+  valueIndex: number;
+  yM: number;
+}
+
+interface VerticalPlotLayout {
+  height: number;
+  insetBottom: number;
+  insetLeft: number;
+  insetRight: number;
+  insetTop: number;
+  plotHeight: number;
+  plotWidth: number;
+  width: number;
+}
+
 document.querySelector("#app").innerHTML = `
   <main class="viewport-app">
     <section class="viewport-shell" id="viewport-shell">
@@ -150,7 +170,7 @@ document.querySelector("#app").innerHTML = `
                 </div>
               </div>
             </details>
-            <details class="collapse-card" open>
+            <details class="collapse-card">
               <summary>
                 <span class="collapse-card__title">
                   <strong>Model summary</strong>
@@ -289,7 +309,7 @@ document.querySelector("#app").innerHTML = `
                 </div>
               </div>
             </details>
-            <details class="collapse-card" open>
+            <details class="collapse-card">
               <summary>
                 <span class="collapse-card__title">
                   <strong>WASM runtime</strong>
@@ -343,6 +363,27 @@ document.querySelector("#app").innerHTML = `
           <span id="hover-stress">sigma = 0.0 kPa total</span>
           <span id="hover-note">Whole-volume surface probe</span>
         </div>
+
+        <section class="overlay-card overlay-card--section">
+          <div class="section-callout__header">
+            <div>
+              <p class="eyebrow eyebrow--card">Section overlay</p>
+              <h2>Coupled specimen-ground section</h2>
+            </div>
+            <p id="vertical-plot-summary">XZ section at the depth mid-plane.</p>
+          </div>
+          <div class="ground-plot-frame ground-plot-frame--overlay">
+            <canvas id="vertical-plot-canvas" aria-label="Vertical subsurface stress plot"></canvas>
+          </div>
+          <div class="ground-plot-meta ground-plot-meta--overlay">
+            <span id="vertical-plot-range">Section range 0.0 to 0.0 kPa</span>
+            <span id="vertical-plot-position">XZ section at z = 0.050 m</span>
+          </div>
+          <div class="stress-flow-callout">
+            <strong id="stress-flow-title">Stress flow</strong>
+            <span id="stress-flow-body">Click a point in the section overlay to trace compression from the top face into the ground.</span>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -361,22 +402,6 @@ document.querySelector("#app").innerHTML = `
         <div class="ground-plot-meta">
           <span id="ground-plot-range">Surface range 0.0 to 0.0 kPa</span>
           <span id="ground-plot-footprint">Loaded footprint 0.10 x 0.10 m</span>
-        </div>
-      </article>
-      <article class="insight-card insight-card--plot">
-        <div class="insight-card__header">
-          <div>
-            <p class="eyebrow eyebrow--card">Vertical subsurface plot</p>
-            <h2>Coupled specimen-ground section</h2>
-          </div>
-          <p id="vertical-plot-summary">XZ section at the depth mid-plane.</p>
-        </div>
-        <div class="ground-plot-frame">
-          <canvas id="vertical-plot-canvas" aria-label="Vertical subsurface stress plot"></canvas>
-        </div>
-        <div class="ground-plot-meta">
-          <span id="vertical-plot-range">Section range 0.0 to 0.0 kPa</span>
-          <span id="vertical-plot-position">XZ section at z = 0.050 m</span>
         </div>
       </article>
     </section>
@@ -412,6 +437,7 @@ const sectionDimensions = document.getElementById("section-dimensions");
 const viewportHead = document.querySelector(".viewport-head");
 const leftOverlayCard = document.querySelector(".overlay-card--left");
 const rightOverlayCard = document.querySelector(".overlay-card--right");
+const sectionOverlayCard = document.querySelector(".overlay-card--section");
 const overlayStrip = document.querySelector(".overlay-strip");
 const hoverCard = document.getElementById("hover-card");
 const hoverCoords = document.getElementById("hover-coords");
@@ -448,6 +474,8 @@ const verticalPlotCanvas = document.getElementById("vertical-plot-canvas") as HT
 const verticalPlotRange = document.getElementById("vertical-plot-range");
 const verticalPlotPosition = document.getElementById("vertical-plot-position");
 const verticalPlotSummary = document.getElementById("vertical-plot-summary");
+const stressFlowTitle = document.getElementById("stress-flow-title");
+const stressFlowBody = document.getElementById("stress-flow-body");
 const collapsibleCards = Array.from(document.querySelectorAll(".collapse-card"));
 
 const VIEWER_ENV_STORAGE_KEY = "webjenga.viewer.environment";
@@ -552,7 +580,7 @@ function updateFullscreenButton() {
 
 function getMeasuredOverlayBottom() {
   const shellRect = viewportShell.getBoundingClientRect();
-  const heightBoundaries = [viewportHead, leftOverlayCard, rightOverlayCard];
+  const heightBoundaries = [viewportHead, leftOverlayCard, rightOverlayCard, sectionOverlayCard];
 
   if (windowedLayoutQuery.matches) {
     heightBoundaries.push(overlayStrip);
@@ -646,6 +674,8 @@ let verticalSectionCacheKey = "";
 let verticalSectionCache: VerticalSectionField | null = null;
 let currentGroundSurfaceField: GroundStressField | null = null;
 let currentVerticalSectionField: VerticalSectionField | null = null;
+let currentStressFlowSelection: StressFlowSelection | null = null;
+let currentVerticalPlotLayout: VerticalPlotLayout | null = null;
 let currentRuntimeMetrics: RuntimeCallMetrics | null = null;
 let runtimeMetricsTimer = 0;
 
@@ -1168,6 +1198,96 @@ function getVerticalSectionField(
   return verticalSectionCache;
 }
 
+function projectVerticalPlotPoint(
+  field: VerticalSectionField,
+  layout: VerticalPlotLayout,
+  horizontalM: number,
+  yM: number
+) {
+  return {
+    x:
+      layout.insetLeft +
+      ((horizontalM + field.widthM / 2) / Math.max(field.widthM, 1e-6)) * layout.plotWidth,
+    y:
+      layout.insetTop +
+      ((field.yMaxM - yM) / Math.max(field.yMaxM - field.yMinM, 1e-6)) * layout.plotHeight,
+  };
+}
+
+function syncStressFlowSelection() {
+  const field = currentVerticalSectionField;
+
+  if (!runtime || !field || !currentStressFlowSelection || currentStressFlowSelection.axis !== field.axis) {
+    currentStressFlowSelection = null;
+    stressFlowTitle.textContent = "Stress flow";
+    stressFlowBody.textContent =
+      "Click a point in the section overlay to trace compression from the top face into the ground.";
+    viewer.update({
+      stressFlowPath: null,
+    });
+    return;
+  }
+
+  const horizontalLabel = field.horizontalLabel;
+  const offsetLabel =
+    field.axis === "xz"
+      ? "z = " + formatFixed(field.offsetM + currentSection.depthM / 2, 3) + " m"
+      : "x = " + formatFixed(field.offsetM + currentSection.widthM / 2, 3) + " m";
+  const pointCoordinate =
+    horizontalLabel + " = " + formatFixed(currentStressFlowSelection.horizontalM + field.widthM / 2, 3) + " m";
+  const pointStressKpa = currentStressFlowSelection.stressPa / 1000;
+  const pointCoordinates =
+    field.axis === "xz"
+      ? {
+          x: currentStressFlowSelection.horizontalM,
+          z: field.offsetM,
+        }
+      : {
+          x: field.offsetM,
+          z: currentStressFlowSelection.horizontalM,
+        };
+  const topStressPa = runtime.calculateStressAtPointPa(currentSection, {
+    groundDepthM: currentSection.groundDepthM,
+    x: pointCoordinates.x,
+    y: currentSection.heightM / 2 - 0.0005,
+    z: pointCoordinates.z,
+  });
+  const baseStressPa = runtime.calculateStressAtPointPa(currentSection, {
+    groundDepthM: currentSection.groundDepthM,
+    x: pointCoordinates.x,
+    y: -currentSection.heightM / 2 + 0.0005,
+    z: pointCoordinates.z,
+  });
+  const groundStressPa = runtime.calculateStressAtPointPa(currentSection, {
+    groundDepthM: currentSection.groundDepthM,
+    x: pointCoordinates.x,
+    y: -currentSection.heightM / 2 - currentSection.groundDepthM * 0.55,
+    z: pointCoordinates.z,
+  });
+
+  stressFlowTitle.textContent = pointCoordinate + ", " + offsetLabel;
+  stressFlowBody.textContent =
+    "Top " +
+    formatFixed(topStressPa / 1000, 1) +
+    " kPa, selected " +
+    formatFixed(pointStressKpa, 1) +
+    " kPa, base " +
+    formatFixed(baseStressPa / 1000, 1) +
+    " kPa, ground " +
+    formatFixed(groundStressPa / 1000, 1) +
+    " kPa.";
+  viewer.update({
+    stressFlowPath: {
+      axis: field.axis,
+      groundY: -currentSection.heightM / 2 - currentSection.groundDepthM * 0.82,
+      horizontalM: currentStressFlowSelection.horizontalM,
+      offsetM: field.offsetM,
+      pointY: currentStressFlowSelection.yM,
+      topY: currentSection.heightM / 2,
+    },
+  });
+}
+
 function drawVerticalSectionPlot() {
   const context = verticalPlotCanvas.getContext("2d");
   const field = currentVerticalSectionField;
@@ -1194,26 +1314,39 @@ function drawVerticalSectionPlot() {
   const plotStroke = readThemeCssVar("--plot-stroke");
   const plotText = readThemeCssVar("--plot-text");
   const plotFootprint = readThemeCssVar("--plot-footprint");
-  const insetLeft = 56;
-  const insetRight = 18;
-  const insetTop = 18;
-  const insetBottom = 30;
-  const cellWidth = (width - insetLeft - insetRight) / field.columns;
-  const cellHeight = (height - insetTop - insetBottom) / field.rows;
+  const flowStroke = readThemeCssVar("--accent");
+  const flowFill = readThemeCssVar("--accent-2");
+  const insetLeft = 46;
+  const insetRight = 14;
+  const insetTop = 14;
+  const insetBottom = 24;
+  const plotWidth = width - insetLeft - insetRight;
+  const plotHeight = height - insetTop - insetBottom;
+  const cellWidth = plotWidth / field.columns;
+  const cellHeight = plotHeight / field.rows;
   const groundSurfaceRatio =
     (field.yMaxM - (-currentSection.heightM / 2)) / Math.max(field.yMaxM - field.yMinM, 1e-6);
-  const groundSurfaceY = insetTop + (height - insetTop - insetBottom) * groundSurfaceRatio;
+  const groundSurfaceY = insetTop + plotHeight * groundSurfaceRatio;
   const specimenHorizontalSpan = field.axis === "xz" ? currentSection.widthM : currentSection.depthM;
   const specimenLeft =
     insetLeft +
-    ((field.widthM / 2 - specimenHorizontalSpan / 2) / Math.max(field.widthM, 1e-6)) *
-      (width - insetLeft - insetRight);
+    ((field.widthM / 2 - specimenHorizontalSpan / 2) / Math.max(field.widthM, 1e-6)) * plotWidth;
   const specimenRight =
     insetLeft +
-    ((field.widthM / 2 + specimenHorizontalSpan / 2) / Math.max(field.widthM, 1e-6)) *
-      (width - insetLeft - insetRight);
+    ((field.widthM / 2 + specimenHorizontalSpan / 2) / Math.max(field.widthM, 1e-6)) * plotWidth;
   const specimenTop = insetTop;
   const specimenBottom = groundSurfaceY;
+
+  currentVerticalPlotLayout = {
+    height,
+    insetBottom,
+    insetLeft,
+    insetRight,
+    insetTop,
+    plotHeight,
+    plotWidth,
+    width,
+  };
 
   context.clearRect(0, 0, width, height);
   context.fillStyle = plotBackground;
@@ -1240,21 +1373,154 @@ function drawVerticalSectionPlot() {
   context.stroke();
 
   context.strokeStyle = plotFootprint;
-  context.setLineDash([7, 5]);
+  context.setLineDash([6, 4]);
   context.strokeRect(specimenLeft, specimenTop, specimenRight - specimenLeft, specimenBottom - specimenTop);
   context.setLineDash([]);
 
+  const selectedPoint =
+    currentStressFlowSelection && currentStressFlowSelection.axis === field.axis
+      ? projectVerticalPlotPoint(
+          field,
+          currentVerticalPlotLayout,
+          currentStressFlowSelection.horizontalM,
+          currentStressFlowSelection.yM
+        )
+      : null;
+
+  if (selectedPoint) {
+    const basePoint = projectVerticalPlotPoint(
+      field,
+      currentVerticalPlotLayout,
+      currentStressFlowSelection.horizontalM,
+      -currentSection.heightM / 2
+    );
+    const topPoint = projectVerticalPlotPoint(
+      field,
+      currentVerticalPlotLayout,
+      currentStressFlowSelection.horizontalM,
+      currentSection.heightM / 2
+    );
+    const bottomPoint = projectVerticalPlotPoint(
+      field,
+      currentVerticalPlotLayout,
+      currentStressFlowSelection.horizontalM,
+      field.yMinM
+    );
+
+    context.strokeStyle = flowStroke;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(topPoint.x, topPoint.y);
+    context.lineTo(selectedPoint.x, selectedPoint.y);
+    context.lineTo(basePoint.x, basePoint.y);
+    context.stroke();
+
+    context.beginPath();
+    context.moveTo(basePoint.x, basePoint.y);
+    context.lineTo(basePoint.x, bottomPoint.y - 14);
+    context.stroke();
+
+    context.beginPath();
+    context.moveTo(basePoint.x, basePoint.y);
+    context.lineTo(basePoint.x - 24, bottomPoint.y);
+    context.moveTo(basePoint.x, basePoint.y);
+    context.lineTo(basePoint.x + 24, bottomPoint.y);
+    context.stroke();
+
+    context.fillStyle = flowFill;
+    context.beginPath();
+    context.arc(selectedPoint.x, selectedPoint.y, 5.5, 0, Math.PI * 2);
+    context.fill();
+    context.lineWidth = 2;
+    context.strokeStyle = flowStroke;
+    context.stroke();
+
+    context.beginPath();
+    context.moveTo(selectedPoint.x, selectedPoint.y - 15);
+    context.lineTo(selectedPoint.x, selectedPoint.y + 15);
+    context.moveTo(selectedPoint.x - 10, selectedPoint.y);
+    context.lineTo(selectedPoint.x + 10, selectedPoint.y);
+    context.stroke();
+
+    context.beginPath();
+    context.moveTo(selectedPoint.x, selectedPoint.y - 15);
+    context.lineTo(selectedPoint.x - 4, selectedPoint.y - 8);
+    context.moveTo(selectedPoint.x, selectedPoint.y - 15);
+    context.lineTo(selectedPoint.x + 4, selectedPoint.y - 8);
+    context.moveTo(selectedPoint.x, selectedPoint.y + 15);
+    context.lineTo(selectedPoint.x - 4, selectedPoint.y + 8);
+    context.moveTo(selectedPoint.x, selectedPoint.y + 15);
+    context.lineTo(selectedPoint.x + 4, selectedPoint.y + 8);
+    context.stroke();
+  }
+
   context.fillStyle = plotText;
-  context.font = "600 12px Avenir Next, Segoe UI, sans-serif";
-  context.fillText("sigma", 14, 18);
-  context.fillText(field.horizontalLabel, width - insetRight - 10, height - 8);
+  context.font = "600 11px Avenir Next, Segoe UI, sans-serif";
+  context.fillText("sigma", 12, 16);
+  context.fillText(field.horizontalLabel, width - insetRight - 8, height - 6);
   context.save();
-  context.translate(16, height * 0.58);
+  context.translate(14, height * 0.58);
   context.rotate(-Math.PI / 2);
   context.fillText("y", 0, 0);
   context.restore();
-  context.fillText("ground", insetLeft + 6, groundSurfaceY + 16);
-  context.fillText("specimen", specimenLeft + 8, specimenTop + 16);
+  context.fillText("ground", insetLeft + 6, groundSurfaceY + 14);
+  context.fillText("specimen", specimenLeft + 6, specimenTop + 14);
+}
+
+function handleVerticalPlotSelection(event: MouseEvent) {
+  const field = currentVerticalSectionField;
+  const layout = currentVerticalPlotLayout;
+
+  if (!field || !layout) {
+    return;
+  }
+
+  const rect = verticalPlotCanvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  if (
+    x < layout.insetLeft ||
+    x > layout.width - layout.insetRight ||
+    y < layout.insetTop ||
+    y > layout.height - layout.insetBottom
+  ) {
+    return;
+  }
+
+  const columnIndex = clamp(
+    Math.floor(((x - layout.insetLeft) / Math.max(layout.plotWidth, 1e-6)) * field.columns),
+    0,
+    field.columns - 1
+  );
+  const rowIndex = clamp(
+    Math.floor(((y - layout.insetTop) / Math.max(layout.plotHeight, 1e-6)) * field.rows),
+    0,
+    field.rows - 1
+  );
+  const horizontalM = -field.widthM / 2 + (columnIndex / Math.max(field.columns - 1, 1)) * field.widthM;
+  const yM = field.yMaxM - (rowIndex / Math.max(field.rows - 1, 1)) * (field.yMaxM - field.yMinM);
+  const valueIndex = rowIndex * field.columns + columnIndex;
+
+  if (
+    currentStressFlowSelection &&
+    currentStressFlowSelection.axis === field.axis &&
+    currentStressFlowSelection.valueIndex === valueIndex
+  ) {
+    currentStressFlowSelection = null;
+  } else {
+    currentStressFlowSelection = {
+      axis: field.axis,
+      horizontalM,
+      rowIndex,
+      stressPa: field.valuesPa[valueIndex],
+      valueIndex,
+      yM,
+    };
+  }
+
+  syncStressFlowSelection();
+  drawVerticalSectionPlot();
 }
 
 function getGroundStressField(
@@ -1568,6 +1834,7 @@ function updateVolumeView(stressState: StressState) {
     widthM: stressState.widthM,
   });
 
+  syncStressFlowSelection();
   drawGroundSurfacePlot();
   drawVerticalSectionPlot();
   hideHover();
@@ -1676,6 +1943,7 @@ async function boot() {
     syncViewerEnvironmentControls();
     render();
   });
+  verticalPlotCanvas.addEventListener("click", handleVerticalPlotSelection);
   collapsibleCards.forEach(function (card) {
     card.addEventListener("toggle", requestViewportHeightSync);
   });
