@@ -6,16 +6,32 @@
     <title>Concrete Stress Demo in WebAssembly</title>
     <style>
       :root {
-        color-scheme: dark;
-        --bg: #06101c;
-        --panel: rgba(10, 17, 32, 0.84);
-        --panel-border: rgba(148, 163, 184, 0.18);
-        --text: #e5eefc;
-        --muted: #91a4c2;
-        --accent: #78d4ff;
-        --accent-2: #74f2b3;
-        --warning: #ffb86b;
-        --shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+        color-scheme: light dark;
+        --bg: #edf3fa;
+        --bg-2: #f8fbff;
+        --panel: rgba(255, 255, 255, 0.86);
+        --panel-border: rgba(15, 23, 42, 0.08);
+        --text: #102033;
+        --muted: #607089;
+        --accent: #2b6bff;
+        --accent-2: #0f9f8f;
+        --warning: #c47d11;
+        --shadow: 0 22px 60px rgba(15, 23, 42, 0.11);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #06101c;
+          --bg-2: #0a1425;
+          --panel: rgba(10, 17, 32, 0.84);
+          --panel-border: rgba(148, 163, 184, 0.18);
+          --text: #e5eefc;
+          --muted: #91a4c2;
+          --accent: #78d4ff;
+          --accent-2: #74f2b3;
+          --warning: #ffb86b;
+          --shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+        }
       }
 
       * {
@@ -28,9 +44,9 @@
         min-height: 100vh;
         color: var(--text);
         background:
-          radial-gradient(circle at top left, rgba(120, 212, 255, 0.18), transparent 34%),
-          radial-gradient(circle at 80% 20%, rgba(116, 242, 179, 0.16), transparent 30%),
-          linear-gradient(180deg, #05101d 0%, #07111f 50%, #040913 100%);
+          radial-gradient(circle at top left, rgba(43, 107, 255, 0.12), transparent 32%),
+          radial-gradient(circle at 80% 20%, rgba(15, 159, 143, 0.12), transparent 28%),
+          linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 52%, #dfe8f4 100%);
       }
 
       body::before {
@@ -39,10 +55,10 @@
         inset: 0;
         pointer-events: none;
         background-image:
-          linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+          linear-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(15, 23, 42, 0.06) 1px, transparent 1px);
         background-size: 64px 64px;
-        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.75), transparent 90%);
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 90%);
       }
 
       main {
@@ -142,28 +158,130 @@
         width: 100%;
         padding: 12px 14px;
         border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        background: rgba(2, 6, 23, 0.85);
+        border: 1px solid rgba(15, 23, 42, 0.12);
+        background: rgba(255, 255, 255, 0.9);
         color: var(--text);
         font: inherit;
       }
 
       .field input:focus {
-        outline: 2px solid rgba(120, 212, 255, 0.35);
-        border-color: rgba(120, 212, 255, 0.45);
+        outline: 2px solid rgba(43, 107, 255, 0.22);
+        border-color: rgba(43, 107, 255, 0.34);
       }
 
       .formula {
         margin-top: 16px;
         padding: 14px 16px;
         border-radius: 16px;
-        background: rgba(2, 6, 23, 0.56);
-        color: #d7e7ff;
+        background: rgba(15, 23, 42, 0.04);
+        color: var(--text);
         line-height: 1.55;
       }
 
       .formula code {
         color: var(--accent-2);
+      }
+
+      .diagram-stage {
+        margin-top: 18px;
+        padding: 18px;
+        border-radius: 20px;
+        background:
+          linear-gradient(180deg, rgba(43, 107, 255, 0.05), rgba(15, 159, 143, 0.03)),
+          rgba(255, 255, 255, 0.64);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+      }
+
+      .diagram-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .diagram-shell {
+        border-radius: 22px;
+        overflow: hidden;
+        background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(232, 240, 249, 0.98));
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+      }
+
+      .diagram-shell.is-updating {
+        animation: section-pop 420ms ease;
+      }
+
+      .section-svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .section-svg text {
+        font-family: inherit;
+      }
+
+      .svg-title {
+        fill: var(--text);
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .svg-subtitle {
+        fill: var(--muted);
+        font-size: 14px;
+      }
+
+      .svg-stress {
+        fill: var(--accent);
+        font-size: 32px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+      }
+
+      .svg-label {
+        fill: var(--muted);
+        font-size: 13px;
+      }
+
+      .svg-chip {
+        fill: rgba(255, 255, 255, 0.88);
+        stroke: rgba(15, 23, 42, 0.08);
+      }
+
+      .svg-chip-text {
+        fill: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .diagram-legend {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .diagram-item {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+      }
+
+      .diagram-item strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 1rem;
+        color: var(--text);
+      }
+
+      .diagram-item span {
+        color: var(--muted);
+        font-size: 0.85rem;
       }
 
       .visual-top {
@@ -418,50 +536,6 @@
         margin-left: 8px;
       }
 
-      .gauge {
-        position: relative;
-        margin-top: 18px;
-        padding: 14px;
-        border-radius: 20px;
-        background: rgba(2, 6, 23, 0.58);
-        border: 1px solid rgba(148, 163, 184, 0.12);
-      }
-
-      .gauge-track {
-        position: relative;
-        height: 280px;
-        border-radius: 16px;
-        overflow: hidden;
-        background: linear-gradient(180deg, rgba(148, 163, 184, 0.08), rgba(2, 6, 23, 0.78));
-        border: 1px solid rgba(148, 163, 184, 0.12);
-      }
-
-      .gauge-fill {
-        position: absolute;
-        inset: auto 0 0 0;
-        height: 0%;
-        border-radius: 16px 16px 0 0;
-        transition: height 180ms ease, background 180ms ease;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
-      }
-
-      .gauge-marker {
-        position: absolute;
-        inset: 0 0 auto 0;
-        display: flex;
-        justify-content: space-between;
-        padding: 12px 14px;
-        color: rgba(229, 238, 252, 0.84);
-        font-size: 0.84rem;
-        pointer-events: none;
-      }
-
-      .gauge-caption {
-        margin-top: 12px;
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-
       .stats {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -472,8 +546,8 @@
       .stat {
         padding: 14px;
         border-radius: 16px;
-        background: rgba(2, 6, 23, 0.5);
-        border: 1px solid rgba(148, 163, 184, 0.12);
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(15, 23, 42, 0.08);
       }
 
       .stat strong {
@@ -502,6 +576,18 @@
         color: #d8e6ff;
       }
 
+      @keyframes section-pop {
+        0% {
+          transform: translateY(0) scale(1);
+        }
+        35% {
+          transform: translateY(-4px) scale(1.01);
+        }
+        100% {
+          transform: translateY(0) scale(1);
+        }
+      }
+
       @media (max-width: 920px) {
         .hero {
           flex-direction: column;
@@ -509,7 +595,8 @@
 
         .grid,
         .stats,
-        .field-grid {
+        .field-grid,
+        .diagram-legend {
           grid-template-columns: 1fr;
         }
       }
@@ -522,10 +609,6 @@
         .card-inner,
         pre {
           padding: 16px;
-        }
-
-        .gauge-track {
-          height: 220px;
         }
       }
     </style>
@@ -603,71 +686,77 @@
           <div class="card-inner">
             <div class="visual-top">
               <div>
-                <h2>Combined stress</h2>
+                <h2>Cross-sectional stress</h2>
                 <div class="big-number"><span id="stress-kpa">0.0</span><span class="unit">kPa</span></div>
               </div>
               <div class="pill" id="ratio-label">0% of 500 kPa scale</div>
             </div>
 
-            <div class="prism-stage">
-              <div class="prism-labels">
-                <span>Animated prism graphic</span>
-                <span id="prism-dimensions">0.10 × 0.10 × 1.00 m</span>
+            <div class="diagram-stage">
+              <div class="diagram-head">
+                <span>2D section view</span>
+                <span id="section-dimensions">0.10 × 0.10 m</span>
               </div>
-              <div class="prism-scene">
-                <div class="prism-ramp"></div>
-                <div class="prism" id="prism-model">
-                  <div class="prism-top"></div>
-                  <div class="prism-side"></div>
-                  <div class="prism-face">
-                    <div class="prism-strain"></div>
-                  </div>
-                  <div class="prism-load"></div>
-                  <div class="prism-cap"></div>
-                  <div class="prism-metric" id="prism-stress-label">23.5 kPa</div>
+              <div class="diagram-shell" id="diagram-shell">
+                <svg class="section-svg" id="section-svg" viewBox="0 0 720 360" role="img" aria-label="Cross-sectional stress diagram">
+                  <defs>
+                    <linearGradient id="section-fill-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop id="section-fill-top" offset="0%" stop-color="#d9ecff" />
+                      <stop id="section-fill-bottom" offset="100%" stop-color="#5aa9ff" />
+                    </linearGradient>
+                    <linearGradient id="section-arrow-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stop-color="#2b6bff" />
+                      <stop offset="100%" stop-color="#0f9f8f" />
+                    </linearGradient>
+                  </defs>
+                  <rect x="14" y="14" width="692" height="332" rx="28" fill="#f9fcff" />
+                  <text class="svg-title" x="36" y="56">Uniform compression across the section</text>
+                  <text class="svg-subtitle" x="36" y="82" id="section-description">
+                    Self-weight plus applied top load
+                  </text>
+                  <text class="svg-stress" x="36" y="128" id="section-stress-label">0.0 kPa</text>
+                  <text class="svg-label" x="36" y="154" id="section-total-label">0.0000 MPa combined stress</text>
+
+                  <g id="section-load-arrow" opacity="0.95">
+                    <line x1="360" y1="42" x2="360" y2="122" stroke="url(#section-arrow-gradient)" stroke-width="12" stroke-linecap="round" />
+                    <polygon points="360,26 342,50 378,50" fill="#2b6bff" />
+                    <rect class="svg-chip" x="278" y="130" width="164" height="32" rx="16" />
+                    <text class="svg-chip-text" x="360" y="151" text-anchor="middle" id="section-load-label">2.5 kN applied load</text>
+                  </g>
+
+                  <g id="section-body">
+                    <rect id="section-block" x="200" y="168" width="320" height="120" rx="24" fill="url(#section-fill-gradient)" stroke="rgba(15, 23, 42, 0.1)" stroke-width="2" />
+                    <rect x="222" y="190" width="276" height="76" rx="16" fill="rgba(255,255,255,0.24)" />
+                    <text class="svg-label" x="232" y="214">Cross-section area</text>
+                    <text class="svg-chip-text" x="232" y="242" id="section-area-label">0.0100 m²</text>
+                    <text class="svg-label" x="232" y="272">Stress is treated as uniform here</text>
+                  </g>
+
+                  <g id="section-legend">
+                    <rect class="svg-chip" x="540" y="186" width="144" height="34" rx="17" />
+                    <text class="svg-chip-text" x="612" y="208" text-anchor="middle" id="section-self-weight-label">235 N self-weight</text>
+                    <rect class="svg-chip" x="540" y="232" width="144" height="34" rx="17" />
+                    <text class="svg-chip-text" x="612" y="254" text-anchor="middle" id="section-applied-load-label">2.5 kN applied</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="diagram-legend">
+                <div class="diagram-item">
+                  <strong id="mass-value">0.0 kg</strong>
+                  <span>Prism mass</span>
                 </div>
-              </div>
-              <div class="prism-detail">
-                <span>
-                  <strong id="prism-self-weight-label">235 N</strong>
+                <div class="diagram-item">
+                  <strong id="self-weight-value">0 N</strong>
                   <span>Self-weight</span>
-                </span>
-                <span>
-                  <strong id="prism-load-label">2.5 kN</strong>
-                  <span>Applied top load</span>
-                </span>
-              </div>
-            </div>
-
-            <div class="gauge">
-              <div class="gauge-track">
-                <div class="gauge-marker">
-                  <span>0</span>
-                  <span>500 kPa</span>
                 </div>
-                <div class="gauge-fill" id="gauge-fill"></div>
-              </div>
-              <div class="gauge-caption" id="gauge-caption">
-                The bar shows combined stress from self-weight and the applied top load.
-              </div>
-            </div>
-
-            <div class="stats">
-              <div class="stat">
-                <strong id="mass-value">0.0 kg</strong>
-                <span>Prism mass</span>
-              </div>
-              <div class="stat">
-                <strong id="self-weight-value">0 N</strong>
-                <span>Self-weight</span>
-              </div>
-              <div class="stat">
-                <strong id="applied-load-value">0 N</strong>
-                <span>Applied load</span>
-              </div>
-              <div class="stat">
-                <strong id="stress-mpa">0.0000 MPa</strong>
-                <span>Combined stress</span>
+                <div class="diagram-item">
+                  <strong id="applied-load-value">0 N</strong>
+                  <span>Applied load</span>
+                </div>
+                <div class="diagram-item">
+                  <strong id="stress-mpa">0.0000 MPa</strong>
+                  <span>Combined stress</span>
+                </div>
               </div>
             </div>
           </div>
@@ -701,14 +790,18 @@
         var massValue = document.getElementById("mass-value");
         var selfWeightValue = document.getElementById("self-weight-value");
         var appliedLoadValue = document.getElementById("applied-load-value");
-        var gaugeFill = document.getElementById("gauge-fill");
         var ratioLabel = document.getElementById("ratio-label");
-        var gaugeCaption = document.getElementById("gauge-caption");
-        var prismModel = document.getElementById("prism-model");
-        var prismStressLabel = document.getElementById("prism-stress-label");
-        var prismDimensions = document.getElementById("prism-dimensions");
-        var prismSelfWeightLabel = document.getElementById("prism-self-weight-label");
-        var prismLoadLabel = document.getElementById("prism-load-label");
+        var diagramShell = document.getElementById("diagram-shell");
+        var sectionFillTop = document.getElementById("section-fill-top");
+        var sectionFillBottom = document.getElementById("section-fill-bottom");
+        var sectionStressLabel = document.getElementById("section-stress-label");
+        var sectionTotalLabel = document.getElementById("section-total-label");
+        var sectionAreaLabel = document.getElementById("section-area-label");
+        var sectionDescription = document.getElementById("section-description");
+        var sectionLoadLabel = document.getElementById("section-load-label");
+        var sectionSelfWeightLabel = document.getElementById("section-self-weight-label");
+        var sectionAppliedLoadLabel = document.getElementById("section-applied-load-label");
+        var sectionDimensions = document.getElementById("section-dimensions");
 
         var displayScalePa = 500000;
         var displayLoadScaleN = 5000;
@@ -739,59 +832,63 @@
           return formatRounded(value) + " N";
         }
 
-        function updateGauge(stressPa) {
-          var ratio = Math.max(0, Math.min(1, stressPa / displayScalePa));
-          var hue = 120 - ratio * 95;
-          var fillHeight = Math.max(2, ratio * 100);
-          var scaleKpa = displayScalePa / 1000;
-
-          gaugeFill.style.height = fillHeight + "%";
-          gaugeFill.style.background =
-            "linear-gradient(180deg, hsl(" +
-            hue +
-            " 88% 64%), hsl(" +
-            hue +
-            " 84% 35%))";
-          ratioLabel.textContent = Math.round(ratio * 100) + "% of " + formatFixed(scaleKpa, 0) + " kPa scale";
-          gaugeCaption.textContent =
-            stressPa > displayScalePa
-              ? "The calculated stress exceeds the visual scale, so the bar is capped at " + formatFixed(scaleKpa, 0) + " kPa."
-              : "The bar shows combined stress from self-weight and the applied top load.";
+        function pulseDiagram() {
+          diagramShell.classList.remove("is-updating");
+          void diagramShell.offsetWidth;
+          diagramShell.classList.add("is-updating");
         }
 
-        function pulsePrism() {
-          prismModel.classList.remove("is-updating");
-          void prismModel.offsetWidth;
-          prismModel.classList.add("is-updating");
-        }
-
-        function updatePrism(widthM, depthM, heightM, stressPa, selfWeightN, appliedLoadN) {
+        function updateSection(widthM, depthM, heightM, stressPa, massKg, selfWeightN, appliedLoadN, areaM2) {
           var footprint = widthM * depthM;
-          var slenderness = Math.max(0.45, Math.min(1.25, heightM / 1.4));
           var planScale = Math.max(0.72, Math.min(1.18, Math.sqrt(footprint / 0.01)));
           var stressRatio = Math.max(0, Math.min(1, stressPa / displayScalePa));
-          var hue = 112 - stressRatio * 88;
-          var shadowAlpha = 0.22 + stressRatio * 0.18;
-          var bright = "hsla(" + hue + ", 84%, 58%, 0.96)";
-          var dark = "hsla(" + hue + ", 72%, 24%, 0.96)";
+          var hue = 212 - stressRatio * 112;
+          var topFill = "hsla(" + hue + ", 92%, 94%, 1)";
+          var bottomFill = "hsla(" + hue + ", 88%, 58%, 1)";
           var loadRatio = Math.max(0, Math.min(1, appliedLoadN / displayLoadScaleN));
-          var loadScale = 0.55 + loadRatio * 0.9;
+          var loadWidth = 32 + loadRatio * 84;
+          var loadHeight = 54 + loadRatio * 58;
+          var scaleKpa = displayScalePa / 1000;
+          var sectionBlockWidth = Math.round(320 * planScale);
+          var sectionBlockHeight = 128;
+          var sectionBlockX = Math.round((720 - sectionBlockWidth) / 2);
+          var sectionBlockY = 168;
 
-          prismModel.style.setProperty("--prism-width", Math.round(160 * planScale) + "px");
-          prismModel.style.setProperty("--prism-height", Math.round(180 * slenderness) + "px");
-          prismModel.style.setProperty("--prism-shadow", "rgba(0, 0, 0, " + shadowAlpha + ")");
-          prismModel.style.setProperty("--prism-bright", bright);
-          prismModel.style.setProperty("--prism-dark", dark);
-          prismModel.style.setProperty("--load-scale", loadScale.toFixed(3));
-          prismModel.style.setProperty("width", Math.round(160 * planScale) + "px");
-          prismModel.style.setProperty("height", Math.round(180 * slenderness) + "px");
-          prismStressLabel.textContent = formatFixed(stressPa / 1000, 1) + " kPa";
-          prismDimensions.textContent =
-            formatFixed(widthM, 2) + " × " + formatFixed(depthM, 2) + " × " + formatFixed(heightM, 2) + " m";
-          prismSelfWeightLabel.textContent = formatForce(selfWeightN);
-          prismLoadLabel.textContent = formatForce(appliedLoadN);
+          sectionFillTop.setAttribute("stop-color", topFill);
+          sectionFillBottom.setAttribute("stop-color", bottomFill);
+          sectionStressLabel.textContent = formatFixed(stressPa / 1000, 1) + " kPa";
+          sectionTotalLabel.textContent = formatFixed(stressPa / 1000000, 4) + " MPa combined stress";
+          sectionAreaLabel.textContent = formatFixed(areaM2, 4) + " m² cross-section";
+          sectionDimensions.textContent =
+            formatFixed(widthM, 2) + " × " + formatFixed(depthM, 2) + " m section";
+          sectionLoadLabel.textContent = formatForce(appliedLoadN) + " applied load";
+          sectionSelfWeightLabel.textContent = formatForce(selfWeightN) + " self-weight";
+          sectionAppliedLoadLabel.textContent = formatForce(appliedLoadN);
+          diagramShell.style.boxShadow =
+            "0 0 0 1px rgba(15, 23, 42, 0.08), 0 18px 40px rgba(43, 107, 255, " + (0.05 + stressRatio * 0.12).toFixed(3) + ")";
+          sectionDescription.textContent =
+            formatFixed(massKg, 1) + " kg mass, " + formatFixed(heightM, 2) + " m height, " + formatForce(selfWeightN) + " self-weight, " + formatForce(appliedLoadN) + " applied load";
+          ratioLabel.textContent = Math.round(stressRatio * 100) + "% of " + formatFixed(scaleKpa, 0) + " kPa scale";
 
-          pulsePrism();
+          var loadArrow = document.getElementById("section-load-arrow");
+          if (loadArrow) {
+            loadArrow.setAttribute("transform", "translate(" + Math.round((loadRatio - 0.5) * 12) + ",0)");
+            loadArrow.querySelector("line").setAttribute("y2", String(110 + loadHeight / 2));
+            loadArrow.querySelector("polygon").setAttribute(
+              "points",
+              "360,26 " + (360 - Math.round(loadWidth / 2)) + ",50 " + (360 + Math.round(loadWidth / 2)) + ",50"
+            );
+          }
+
+          var block = document.getElementById("section-block");
+          if (block) {
+            block.setAttribute("x", String(sectionBlockX));
+            block.setAttribute("y", String(sectionBlockY));
+            block.setAttribute("width", String(sectionBlockWidth));
+            block.setAttribute("height", String(sectionBlockHeight));
+          }
+
+          pulseDiagram();
         }
 
         function render() {
@@ -830,8 +927,7 @@
           selfWeightValue.textContent = formatForce(selfWeightN);
           appliedLoadValue.textContent = formatForce(appliedLoadN);
 
-          updateGauge(combinedStressPa);
-          updatePrism(widthM, depthM, heightM, combinedStressPa, selfWeightN, appliedLoadN);
+          updateSection(widthM, depthM, heightM, combinedStressPa, massKg, selfWeightN, appliedLoadN, areaM2);
         }
 
         width.addEventListener("input", render);
