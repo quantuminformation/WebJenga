@@ -169,6 +169,226 @@
         gap: 12px;
       }
 
+      .prism-stage {
+        position: relative;
+        margin-top: 18px;
+        padding: 18px 18px 20px;
+        border-radius: 20px;
+        background:
+          radial-gradient(circle at 50% 20%, rgba(120, 212, 255, 0.16), transparent 42%),
+          rgba(2, 6, 23, 0.58);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        overflow: hidden;
+      }
+
+      .prism-stage::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+        background-size: 28px 28px;
+        opacity: 0.45;
+        pointer-events: none;
+      }
+
+      .prism-stage::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: 22px;
+        width: 62%;
+        height: 22px;
+        transform: translateX(-50%);
+        background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), transparent);
+        filter: blur(10px);
+        pointer-events: none;
+      }
+
+      .prism-labels {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .prism-scene {
+        position: relative;
+        z-index: 1;
+        min-height: 270px;
+        display: grid;
+        place-items: center;
+        perspective: 1200px;
+      }
+
+      .prism-ramp {
+        position: absolute;
+        inset: auto 12% 18px;
+        height: 12px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(120, 212, 255, 0.12), rgba(116, 242, 179, 0.3), rgba(255, 184, 107, 0.18));
+        filter: blur(1px);
+      }
+
+      .prism {
+        --prism-height: 180px;
+        --prism-width: 160px;
+        --prism-shadow: rgba(0, 0, 0, 0.25);
+        --prism-bright: rgba(116, 242, 179, 0.95);
+        --prism-dark: rgba(24, 98, 82, 0.95);
+        position: relative;
+        width: var(--prism-width);
+        height: var(--prism-height);
+        transform-style: preserve-3d;
+        transform: translateY(0) scale(1);
+        transition:
+          width 220ms ease,
+          height 220ms ease,
+          transform 220ms ease,
+          filter 220ms ease;
+        filter: drop-shadow(0 22px 24px var(--prism-shadow));
+      }
+
+      .prism.is-updating {
+        animation: prism-pop 420ms ease;
+      }
+
+      .prism-face,
+      .prism-side,
+      .prism-top {
+        position: absolute;
+        inset: 0;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .prism-face {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 24%),
+          linear-gradient(180deg, var(--prism-bright), var(--prism-dark));
+      }
+
+      .prism-side {
+        left: auto;
+        right: -14px;
+        width: 28px;
+        transform: skewY(-42deg);
+        transform-origin: left center;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.28));
+      }
+
+      .prism-top {
+        height: 28px;
+        top: -14px;
+        transform: skewX(-48deg);
+        transform-origin: center bottom;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.03));
+      }
+
+      .prism-cap {
+        position: absolute;
+        inset: auto 0 -18px;
+        height: 18px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.18), transparent 72%);
+      }
+
+      .prism-strain {
+        position: absolute;
+        inset: 8px 8px 8px 8px;
+        border-radius: 14px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.18));
+        opacity: 0.85;
+      }
+
+      .prism-strain::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 28%, transparent 72%, rgba(0, 0, 0, 0.24));
+        mix-blend-mode: screen;
+      }
+
+      .prism-load {
+        position: absolute;
+        left: 50%;
+        top: -68px;
+        width: 10px;
+        height: 56px;
+        transform: translateX(-50%);
+        background: linear-gradient(180deg, rgba(120, 212, 255, 0.95), rgba(120, 212, 255, 0.2));
+        border-radius: 999px;
+        box-shadow: 0 0 16px rgba(120, 212, 255, 0.38);
+      }
+
+      .prism-load::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: -9px;
+        width: 0;
+        height: 0;
+        transform: translateX(-50%);
+        border-left: 9px solid transparent;
+        border-right: 9px solid transparent;
+        border-bottom: 12px solid rgba(120, 212, 255, 0.95);
+      }
+
+      .prism-load::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: -12px;
+        width: 34px;
+        height: 8px;
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: rgba(120, 212, 255, 0.35);
+        filter: blur(2px);
+      }
+
+      .prism-metric {
+        position: absolute;
+        right: 14px;
+        bottom: 14px;
+        z-index: 1;
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: rgba(2, 6, 23, 0.8);
+        border: 1px solid rgba(120, 212, 255, 0.18);
+        color: var(--accent);
+        font-size: 0.8rem;
+      }
+
+      .prism-detail {
+        position: relative;
+        z-index: 1;
+        margin-top: 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      @keyframes prism-pop {
+        0% {
+          transform: translateY(0) scale(1);
+        }
+        35% {
+          transform: translateY(-6px) scale(1.03);
+        }
+        100% {
+          transform: translateY(0) scale(1);
+        }
+      }
+
       .big-number {
         font-size: clamp(2rem, 5vw, 3rem);
         font-weight: 700;
@@ -361,6 +581,30 @@
               <div class="pill" id="ratio-label">0% of 50 kPa scale</div>
             </div>
 
+            <div class="prism-stage">
+              <div class="prism-labels">
+                <span>Animated prism graphic</span>
+                <span id="prism-dimensions">0.10 × 0.10 × 1.00 m</span>
+              </div>
+              <div class="prism-scene">
+                <div class="prism-ramp"></div>
+                <div class="prism" id="prism-model">
+                  <div class="prism-top"></div>
+                  <div class="prism-side"></div>
+                  <div class="prism-face">
+                    <div class="prism-strain"></div>
+                  </div>
+                  <div class="prism-load"></div>
+                  <div class="prism-cap"></div>
+                  <div class="prism-metric" id="prism-stress-label">23.5 kPa</div>
+                </div>
+              </div>
+              <div class="prism-detail">
+                <span id="prism-mass-label">24.0 kg</span>
+                <span id="prism-force-label">235 N</span>
+              </div>
+            </div>
+
             <div class="gauge">
               <div class="gauge-track">
                 <div class="gauge-marker">
@@ -414,8 +658,18 @@
         var gaugeFill = document.getElementById("gauge-fill");
         var ratioLabel = document.getElementById("ratio-label");
         var gaugeCaption = document.getElementById("gauge-caption");
+        var prismModel = document.getElementById("prism-model");
+        var prismStressLabel = document.getElementById("prism-stress-label");
+        var prismDimensions = document.getElementById("prism-dimensions");
+        var prismMassLabel = document.getElementById("prism-mass-label");
+        var prismForceLabel = document.getElementById("prism-force-label");
 
         var displayScalePa = 50000;
+        var prismState = {
+          width: 0.1,
+          depth: 0.1,
+          height: 1.0,
+        };
 
         function readValue(input, fallback) {
           var parsed = Number.parseFloat(input.value);
@@ -454,6 +708,42 @@
               : "Self-weight is tiny, so the scale is set to 50 kPa to keep the bar visible.";
         }
 
+        function pulsePrism() {
+          prismModel.classList.remove("is-updating");
+          void prismModel.offsetWidth;
+          prismModel.classList.add("is-updating");
+        }
+
+        function updatePrism(widthM, depthM, heightM, stressPa, massKg, forceN) {
+          var footprint = widthM * depthM;
+          var slenderness = Math.max(0.45, Math.min(1.25, heightM / 1.4));
+          var planScale = Math.max(0.72, Math.min(1.18, Math.sqrt(footprint / 0.01)));
+          var stressRatio = Math.max(0, Math.min(1, stressPa / displayScalePa));
+          var hue = 112 - stressRatio * 88;
+          var shadowAlpha = 0.22 + stressRatio * 0.18;
+          var bright = "hsla(" + hue + ", 84%, 58%, 0.96)";
+          var dark = "hsla(" + hue + ", 72%, 24%, 0.96)";
+
+          prismState.width = widthM;
+          prismState.depth = depthM;
+          prismState.height = heightM;
+
+          prismModel.style.setProperty("--prism-width", Math.round(160 * planScale) + "px");
+          prismModel.style.setProperty("--prism-height", Math.round(180 * slenderness) + "px");
+          prismModel.style.setProperty("--prism-shadow", "rgba(0, 0, 0, " + shadowAlpha + ")");
+          prismModel.style.setProperty("--prism-bright", bright);
+          prismModel.style.setProperty("--prism-dark", dark);
+          prismModel.style.setProperty("width", Math.round(160 * planScale) + "px");
+          prismModel.style.setProperty("height", Math.round(180 * slenderness) + "px");
+          prismStressLabel.textContent = formatFixed(stressPa / 1000, 1) + " kPa";
+          prismDimensions.textContent =
+            formatFixed(widthM, 2) + " × " + formatFixed(depthM, 2) + " × " + formatFixed(heightM, 2) + " m";
+          prismMassLabel.textContent = formatFixed(massKg, 1) + " kg";
+          prismForceLabel.textContent = formatRounded(forceN) + " N";
+
+          pulsePrism();
+        }
+
         function render() {
           var widthM = readValue(width, 0.1);
           var depthM = readValue(depth, 0.1);
@@ -487,6 +777,7 @@
           forceValue.textContent = formatRounded(forceN) + " N";
 
           updateGauge(stressPa);
+          updatePrism(widthM, depthM, heightM, stressPa, massKg, forceN);
         }
 
         width.addEventListener("input", render);
