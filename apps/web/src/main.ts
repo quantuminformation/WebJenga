@@ -1,10 +1,16 @@
 import "./styles.css";
 
-import { createConcreteStressViewer, type GroundStressField, type ViewerProbe } from "@webjenga/viewer";
+import {
+  createConcreteStressViewer,
+  type GroundStressField,
+  type GroundStressVolumeLayer,
+  type ViewerProbe,
+} from "@webjenga/viewer";
 import {
   calculateStressState,
   loadConcreteStressRuntime,
   type ConcreteStressRuntime,
+  type RuntimeCallMetrics,
   type StressInputs,
   type StressState,
 } from "@webjenga/wasm-bridge";
@@ -12,6 +18,7 @@ import {
 interface ViewerEnvironmentState {
   showFigure: boolean;
   showGround: boolean;
+  showGroundVolume: boolean;
   showHouse: boolean;
   showSky: boolean;
 }
@@ -151,6 +158,7 @@ document.querySelector("#app").innerHTML = `
                 <div class="toggle-row">
                   <button class="toggle-chip" id="toggle-ground" type="button">Ground</button>
                   <button class="toggle-chip" id="toggle-sky" type="button">Sky</button>
+                  <button class="toggle-chip" id="toggle-ground-volume" type="button">Subsurface</button>
                 </div>
               </div>
             </details>
@@ -211,6 +219,34 @@ document.querySelector("#app").innerHTML = `
                 </div>
               </div>
             </details>
+            <details class="collapse-card" open>
+              <summary>
+                <span class="collapse-card__title">
+                  <strong>WASM runtime</strong>
+                  <span>Live call-rate meter from the WebAssembly bridge.</span>
+                </span>
+              </summary>
+              <div class="collapse-card__body">
+                <div class="inline-metrics runtime-metrics">
+                  <div class="mini-chip">
+                    <strong id="wasm-calls-rate">0.0 calls/s</strong>
+                    <span>Current call rate</span>
+                  </div>
+                  <div class="mini-chip">
+                    <strong id="wasm-total-calls">0</strong>
+                    <span>Total bridge calls</span>
+                  </div>
+                  <div class="mini-chip">
+                    <strong id="wasm-point-calls">0</strong>
+                    <span>Point samples</span>
+                  </div>
+                  <div class="mini-chip">
+                    <strong id="wasm-call-time">0.00 ms</strong>
+                    <span>Average call time</span>
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
         </section>
 
@@ -238,6 +274,25 @@ document.querySelector("#app").innerHTML = `
           <span id="hover-note">Whole-volume surface probe</span>
         </div>
       </div>
+    </section>
+
+    <section class="insights-shell">
+      <article class="insight-card insight-card--plot">
+        <div class="insight-card__header">
+          <div>
+            <p class="eyebrow eyebrow--card">Ground surface plot</p>
+            <h2>Ground-surface stress section</h2>
+          </div>
+          <p>Projected x/z surface built from the same sampled field the 3D ground overlay uses.</p>
+        </div>
+        <div class="ground-plot-frame">
+          <canvas id="ground-plot-canvas" aria-label="Ground surface stress plot"></canvas>
+        </div>
+        <div class="ground-plot-meta">
+          <span id="ground-plot-range">Surface range 0.0 to 0.0 kPa</span>
+          <span id="ground-plot-footprint">Loaded footprint 0.10 x 0.10 m</span>
+        </div>
+      </article>
     </section>
 
     <section class="report-shell">
@@ -283,9 +338,17 @@ const viewerCanvas = document.getElementById("viewer-canvas");
 const viewportShell = document.getElementById("viewport-shell");
 const viewportFullscreenButton = document.getElementById("viewport-fullscreen");
 const toggleGround = document.getElementById("toggle-ground");
+const toggleGroundVolume = document.getElementById("toggle-ground-volume");
 const toggleSky = document.getElementById("toggle-sky");
 const toggleHouse = document.getElementById("toggle-house");
 const toggleFigure = document.getElementById("toggle-figure");
+const wasmCallsRate = document.getElementById("wasm-calls-rate");
+const wasmTotalCalls = document.getElementById("wasm-total-calls");
+const wasmPointCalls = document.getElementById("wasm-point-calls");
+const wasmCallTime = document.getElementById("wasm-call-time");
+const groundPlotCanvas = document.getElementById("ground-plot-canvas") as HTMLCanvasElement;
+const groundPlotRange = document.getElementById("ground-plot-range");
+const groundPlotFootprint = document.getElementById("ground-plot-footprint");
 const collapsibleCards = Array.from(document.querySelectorAll(".collapse-card"));
 
 const VIEWER_ENV_STORAGE_KEY = "webjenga.viewer.environment";
@@ -296,7 +359,7 @@ function loadViewerEnvironment(): ViewerEnvironmentState {
     const raw = window.localStorage.getItem(VIEWER_ENV_STORAGE_KEY);
 
     if (!raw) {
-      return { showFigure: true, showGround: true, showHouse: true, showSky: true };
+      return { showFigure: true, showGround: true, showGroundVolume: true, showHouse: true, showSky: true };
     }
 
     const parsed = JSON.parse(raw);
@@ -304,11 +367,12 @@ function loadViewerEnvironment(): ViewerEnvironmentState {
     return {
       showFigure: parsed.showFigure !== false,
       showGround: parsed.showGround !== false,
+      showGroundVolume: parsed.showGroundVolume !== false,
       showHouse: parsed.showHouse !== false,
       showSky: parsed.showSky !== false,
     };
   } catch (error) {
-    return { showFigure: true, showGround: true, showHouse: true, showSky: true };
+    return { showFigure: true, showGround: true, showGroundVolume: true, showHouse: true, showSky: true };
   }
 }
 
@@ -324,6 +388,9 @@ const viewerEnvironment = loadViewerEnvironment();
 const CONCRETE_REFERENCE_MAX_PA = 40_000_000;
 const GROUND_FIELD_COLUMNS = 29;
 const GROUND_FIELD_ROWS = 29;
+const GROUND_VOLUME_COLUMNS = 21;
+const GROUND_VOLUME_ROWS = 21;
+const GROUND_VOLUME_SLICE_COUNT = 7;
 const GROUND_SURFACE_SAMPLE_OFFSET_M = 0.0001;
 let viewportHeightFrame = 0;
 
@@ -424,6 +491,11 @@ let currentSection = {
 } as DisplaySectionState;
 let groundFieldCacheKey = "";
 let groundFieldCache: GroundStressField | null = null;
+let groundVolumeCacheKey = "";
+let groundVolumeCache: GroundStressVolumeLayer[] | null = null;
+let currentGroundSurfaceField: GroundStressField | null = null;
+let currentRuntimeMetrics: RuntimeCallMetrics | null = null;
+let runtimeMetricsTimer = 0;
 
 function formatFixed(value, digits) {
   return Number(value).toLocaleString("en-GB", {
@@ -450,6 +522,7 @@ function setToggleState(button, isActive) {
 function syncViewerEnvironmentControls() {
   setToggleState(toggleFigure, viewerEnvironment.showFigure);
   setToggleState(toggleGround, viewerEnvironment.showGround);
+  setToggleState(toggleGroundVolume, viewerEnvironment.showGroundVolume);
   setToggleState(toggleHouse, viewerEnvironment.showHouse);
   setToggleState(toggleSky, viewerEnvironment.showSky);
 }
@@ -460,6 +533,7 @@ function applyViewerEnvironment() {
   viewer.update({
     showReferenceFigure: viewerEnvironment.showFigure,
     showGround: viewerEnvironment.showGround,
+    showGroundVolume: viewerEnvironment.showGroundVolume,
     showReferenceHouse: viewerEnvironment.showHouse,
     showSky: viewerEnvironment.showSky,
   });
@@ -591,42 +665,218 @@ function getVolumeStressState(bounds: StressBounds): {
   };
 }
 
+function createGroundFieldCacheKey(
+  stressState: StressState,
+  bounds: StressBounds,
+  groundDepthM: number,
+  sampleY: number,
+  columns: number,
+  rows: number
+) {
+  return [
+    formatFixed(stressState.widthM, 4),
+    formatFixed(stressState.depthM, 4),
+    formatFixed(stressState.heightM, 4),
+    formatFixed(stressState.densityKgM3, 1),
+    formatFixed(stressState.appliedLoadN, 1),
+    formatFixed(groundDepthM, 4),
+    formatFixed(bounds.min, 2),
+    formatFixed(bounds.max, 2),
+    formatFixed(sampleY, 5),
+    String(columns),
+    String(rows),
+  ].join("|");
+}
+
+function createGroundPlotColorString(colors: number[], valueIndex: number) {
+  const colorOffset = valueIndex * 3;
+  const r = Math.round(colors[colorOffset] * 255);
+  const g = Math.round(colors[colorOffset + 1] * 255);
+  const b = Math.round(colors[colorOffset + 2] * 255);
+
+  return "rgb(" + r + ", " + g + ", " + b + ")";
+}
+
+function drawGroundSurfacePlot() {
+  const context = groundPlotCanvas.getContext("2d");
+  const field = currentGroundSurfaceField;
+
+  if (!context || !field) {
+    return;
+  }
+
+  const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const widthPx = Math.max(Math.round(groundPlotCanvas.clientWidth * devicePixelRatio), 320);
+  const heightPx = Math.max(Math.round(groundPlotCanvas.clientHeight * devicePixelRatio), 220);
+
+  if (groundPlotCanvas.width !== widthPx || groundPlotCanvas.height !== heightPx) {
+    groundPlotCanvas.width = widthPx;
+    groundPlotCanvas.height = heightPx;
+  }
+
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.scale(devicePixelRatio, devicePixelRatio);
+
+  const width = widthPx / devicePixelRatio;
+  const height = heightPx / devicePixelRatio;
+  const maxValuePa = field.valuesPa.reduce(function (maxValue, value) {
+    return Math.max(maxValue, value);
+  }, 0);
+  const minValuePa = field.valuesPa.reduce(function (minValue, value) {
+    return Math.min(minValue, value);
+  }, Number.POSITIVE_INFINITY);
+  const valueSpanPa = Math.max(maxValuePa - minValuePa, 1);
+  const scale = Math.min(width * 0.24, height * 0.27);
+  const centerX = width * 0.5;
+  const baseY = height * 0.84;
+  const isoTilt = 0.34;
+  const elevationScale = height * 0.28;
+
+  function projectPoint(columnIndex: number, rowIndex: number, valuePa: number) {
+    const xRatio = columnIndex / Math.max(field.columns - 1, 1);
+    const zRatio = rowIndex / Math.max(field.rows - 1, 1);
+    const centeredX = xRatio - 0.5;
+    const centeredZ = zRatio - 0.5;
+    const normalizedValue = (valuePa - minValuePa) / valueSpanPa;
+
+    return {
+      x: centerX + (centeredX - centeredZ) * scale,
+      y: baseY + (centeredX + centeredZ) * scale * isoTilt - normalizedValue * elevationScale,
+    };
+  }
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "rgba(255, 255, 255, 0.82)";
+  context.fillRect(0, 0, width, height);
+
+  const cells: Array<{
+    color: string;
+    depthKey: number;
+    points: Array<{ x: number; y: number }>;
+  }> = [];
+
+  for (let rowIndex = 0; rowIndex < field.rows - 1; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < field.columns - 1; columnIndex += 1) {
+      const topLeftIndex = rowIndex * field.columns + columnIndex;
+      const topRightIndex = topLeftIndex + 1;
+      const bottomLeftIndex = topLeftIndex + field.columns;
+      const bottomRightIndex = bottomLeftIndex + 1;
+      const averageValuePa =
+        (field.valuesPa[topLeftIndex] +
+          field.valuesPa[topRightIndex] +
+          field.valuesPa[bottomLeftIndex] +
+          field.valuesPa[bottomRightIndex]) /
+        4;
+
+      cells.push({
+        color: createGroundPlotColorString(field.colors, topLeftIndex),
+        depthKey: rowIndex + columnIndex,
+        points: [
+          projectPoint(columnIndex, rowIndex, field.valuesPa[topLeftIndex]),
+          projectPoint(columnIndex + 1, rowIndex, field.valuesPa[topRightIndex]),
+          projectPoint(columnIndex + 1, rowIndex + 1, field.valuesPa[bottomRightIndex]),
+          projectPoint(columnIndex, rowIndex + 1, field.valuesPa[bottomLeftIndex]),
+        ].map(function (point) {
+          return {
+            x: point.x,
+            y: point.y - ((averageValuePa - minValuePa) / valueSpanPa) * height * 0.002,
+          };
+        }),
+      });
+    }
+  }
+
+  cells
+    .sort(function (leftCell, rightCell) {
+      return leftCell.depthKey - rightCell.depthKey;
+    })
+    .forEach(function (cell) {
+      context.beginPath();
+      context.moveTo(cell.points[0].x, cell.points[0].y);
+      cell.points.slice(1).forEach(function (point) {
+        context.lineTo(point.x, point.y);
+      });
+      context.closePath();
+      context.fillStyle = cell.color;
+      context.strokeStyle = "rgba(16, 32, 51, 0.12)";
+      context.lineWidth = 1;
+      context.fill();
+      context.stroke();
+    });
+
+  const footprintXRatio = currentSection.widthM / Math.max(field.widthM, 1e-6);
+  const footprintZRatio = currentSection.depthM / Math.max(field.depthM, 1e-6);
+  const footprintColumns = footprintXRatio * (field.columns - 1);
+  const footprintRows = footprintZRatio * (field.rows - 1);
+  const footprintLeft = (field.columns - 1 - footprintColumns) / 2;
+  const footprintTop = (field.rows - 1 - footprintRows) / 2;
+  const footprintPoints = [
+    projectPoint(footprintLeft, footprintTop, minValuePa),
+    projectPoint(footprintLeft + footprintColumns, footprintTop, minValuePa),
+    projectPoint(footprintLeft + footprintColumns, footprintTop + footprintRows, minValuePa),
+    projectPoint(footprintLeft, footprintTop + footprintRows, minValuePa),
+  ];
+
+  context.beginPath();
+  context.moveTo(footprintPoints[0].x, footprintPoints[0].y);
+  footprintPoints.slice(1).forEach(function (point) {
+    context.lineTo(point.x, point.y);
+  });
+  context.closePath();
+  context.strokeStyle = "rgba(16, 32, 51, 0.52)";
+  context.setLineDash([6, 5]);
+  context.lineWidth = 1.5;
+  context.stroke();
+  context.setLineDash([]);
+
+  context.fillStyle = "rgba(16, 32, 51, 0.76)";
+  context.font = "600 12px Avenir Next, Segoe UI, sans-serif";
+  context.fillText("pressure", width - 74, 22);
+  context.fillText("x", width * 0.72, height - 20);
+  context.fillText("z", width * 0.18, height - 20);
+}
+
 function buildGroundStressField(
   runtimeApi: ConcreteStressRuntime,
   stressState: StressState,
   bounds: StressBounds,
-  groundDepthM: number
+  groundDepthM: number,
+  sampleY: number,
+  columns: number,
+  rows: number
 ): GroundStressField {
   const extent = getGroundFieldExtent(stressState);
   const colors = [];
-  const y = -stressState.heightM / 2 - GROUND_SURFACE_SAMPLE_OFFSET_M;
+  const valuesPa = [];
   const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
 
-  for (let rowIndex = 0; rowIndex < GROUND_FIELD_ROWS; rowIndex += 1) {
-    const zRatio = rowIndex / Math.max(GROUND_FIELD_ROWS - 1, 1);
+  for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+    const zRatio = rowIndex / Math.max(rows - 1, 1);
     const z = extent.depthM / 2 - zRatio * extent.depthM;
 
-    for (let columnIndex = 0; columnIndex < GROUND_FIELD_COLUMNS; columnIndex += 1) {
-      const xRatio = columnIndex / Math.max(GROUND_FIELD_COLUMNS - 1, 1);
+    for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
+      const xRatio = columnIndex / Math.max(columns - 1, 1);
       const x = -extent.widthM / 2 + xRatio * extent.widthM;
       const stressPa = runtimeApi.calculateStressAtPointPa(stressState, {
         groundDepthM,
         x,
-        y,
+        y: sampleY,
         z,
       });
       const ratio = getStressRatio(stressPa, 0, materialScaleMaxPa);
       const color = getStressColor(ratio);
 
       colors.push(color.r / 255, color.g / 255, color.b / 255);
+      valuesPa.push(stressPa);
     }
   }
 
   return {
     colors,
-    columns: GROUND_FIELD_COLUMNS,
+    columns,
     depthM: extent.depthM,
-    rows: GROUND_FIELD_ROWS,
+    rows,
+    valuesPa,
     widthM: extent.widthM,
   };
 }
@@ -637,24 +887,90 @@ function getGroundStressField(
   bounds: StressBounds,
   groundDepthM: number
 ) {
-  const cacheKey = [
-    formatFixed(stressState.widthM, 4),
-    formatFixed(stressState.depthM, 4),
-    formatFixed(stressState.heightM, 4),
-    formatFixed(stressState.densityKgM3, 1),
-    formatFixed(stressState.appliedLoadN, 1),
-    formatFixed(groundDepthM, 4),
-    formatFixed(bounds.min, 2),
-    formatFixed(bounds.max, 2),
-  ].join("|");
+  const sampleY = -stressState.heightM / 2 - GROUND_SURFACE_SAMPLE_OFFSET_M;
+  const cacheKey = createGroundFieldCacheKey(
+    stressState,
+    bounds,
+    groundDepthM,
+    sampleY,
+    GROUND_FIELD_COLUMNS,
+    GROUND_FIELD_ROWS
+  );
 
   if (cacheKey === groundFieldCacheKey && groundFieldCache) {
     return groundFieldCache;
   }
 
   groundFieldCacheKey = cacheKey;
-  groundFieldCache = buildGroundStressField(runtimeApi, stressState, bounds, groundDepthM);
+  groundFieldCache = buildGroundStressField(
+    runtimeApi,
+    stressState,
+    bounds,
+    groundDepthM,
+    sampleY,
+    GROUND_FIELD_COLUMNS,
+    GROUND_FIELD_ROWS
+  );
   return groundFieldCache;
+}
+
+function getGroundStressVolumeLayers(
+  runtimeApi: ConcreteStressRuntime,
+  stressState: StressState,
+  bounds: StressBounds,
+  groundDepthM: number
+) {
+  const cacheKey = [
+    createGroundFieldCacheKey(
+      stressState,
+      bounds,
+      groundDepthM,
+      -stressState.heightM / 2 - GROUND_SURFACE_SAMPLE_OFFSET_M,
+      GROUND_VOLUME_COLUMNS,
+      GROUND_VOLUME_ROWS
+    ),
+    String(GROUND_VOLUME_SLICE_COUNT),
+  ].join("|");
+
+  if (cacheKey === groundVolumeCacheKey && groundVolumeCache) {
+    return groundVolumeCache;
+  }
+
+  groundVolumeCacheKey = cacheKey;
+  groundVolumeCache = Array.from({ length: GROUND_VOLUME_SLICE_COUNT }, function (_, index) {
+    const normalizedDepth = (index + 1) / GROUND_VOLUME_SLICE_COUNT;
+    const depthBelowSurfaceM = normalizedDepth * groundDepthM;
+    const y = -stressState.heightM / 2 - depthBelowSurfaceM;
+    const field = buildGroundStressField(
+      runtimeApi,
+      stressState,
+      bounds,
+      groundDepthM,
+      y,
+      GROUND_VOLUME_COLUMNS,
+      GROUND_VOLUME_ROWS
+    );
+
+    return {
+      ...field,
+      opacity: 0.18 - normalizedDepth * 0.08,
+      yM: y,
+    };
+  });
+
+  return groundVolumeCache;
+}
+
+function updateRuntimeMetrics() {
+  if (!runtime) {
+    return;
+  }
+
+  currentRuntimeMetrics = runtime.getMetrics();
+  wasmCallsRate.textContent = formatFixed(currentRuntimeMetrics.callsPerSecond, 1) + " calls/s";
+  wasmTotalCalls.textContent = formatRounded(currentRuntimeMetrics.totalCalls);
+  wasmPointCalls.textContent = formatRounded(currentRuntimeMetrics.functionCalls.calculateStressAtPointPa);
+  wasmCallTime.textContent = formatFixed(currentRuntimeMetrics.averageCallDurationMs, 3) + " ms";
 }
 
 function getReadoutStressPa(sectionState: DisplaySectionState) {
@@ -760,8 +1076,15 @@ function updateVolumeView(stressState: StressState) {
   const sectionState = getVolumeStressState(bounds);
   const groundDepthM = getGroundDepthM(stressState);
   const groundStressField = getGroundStressField(runtime, stressState, bounds, groundDepthM);
+  const groundStressVolumeLayers = getGroundStressVolumeLayers(runtime, stressState, bounds, groundDepthM);
   const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
   const stressRatio = getStressRatio(sectionState.representativeStressPa, 0, materialScaleMaxPa);
+  const groundSurfaceMinPa = groundStressField.valuesPa.reduce(function (minValue, value) {
+    return Math.min(minValue, value);
+  }, Number.POSITIVE_INFINITY);
+  const groundSurfaceMaxPa = groundStressField.valuesPa.reduce(function (maxValue, value) {
+    return Math.max(maxValue, value);
+  }, 0);
 
   currentSection = {
     ...stressState,
@@ -786,9 +1109,23 @@ function updateVolumeView(stressState: StressState) {
   stressBarMarker.style.top = (100 - stressRatio * 100) + "%";
   hoverSwatchIndicator.style.width = Math.round(stressRatio * 100) + "%";
   stressReadoutTitle.textContent = "Whole volume gradient";
+  currentGroundSurfaceField = groundStressField;
+  groundPlotRange.textContent =
+    "Surface range " +
+    formatFixed(groundSurfaceMinPa / 1000, 1) +
+    " to " +
+    formatFixed(groundSurfaceMaxPa / 1000, 1) +
+    " kPa";
+  groundPlotFootprint.textContent =
+    "Loaded footprint " +
+    formatFixed(stressState.widthM, 2) +
+    " x " +
+    formatFixed(stressState.depthM, 2) +
+    " m";
 
   viewer.update({
     depthM: stressState.depthM,
+    groundStressVolumeLayers,
     heightM: stressState.heightM,
     sectionBottomColorCss: sectionState.sectionBottomColorCss,
     sectionGradientMode: sectionState.sectionGradientMode,
@@ -798,6 +1135,7 @@ function updateVolumeView(stressState: StressState) {
     showReferenceFigure: viewerEnvironment.showFigure,
     showSection: false,
     showGround: viewerEnvironment.showGround,
+    showGroundVolume: viewerEnvironment.showGroundVolume,
     showReferenceHouse: viewerEnvironment.showHouse,
     showSky: viewerEnvironment.showSky,
     volumeBottomColorCss: sectionState.volumeBottomColorCss,
@@ -806,6 +1144,7 @@ function updateVolumeView(stressState: StressState) {
     widthM: stressState.widthM,
   });
 
+  drawGroundSurfacePlot();
   hideHover();
   requestViewportHeightSync();
 }
@@ -837,6 +1176,7 @@ function render() {
   volumeSummary.textContent = formatFixed(stressState.volumeM3, 4) + " m^3";
 
   updateVolumeView(stressState);
+  updateRuntimeMetrics();
 }
 
 async function boot() {
@@ -864,6 +1204,10 @@ async function boot() {
     viewerEnvironment.showGround = !viewerEnvironment.showGround;
     applyViewerEnvironment();
   });
+  toggleGroundVolume.addEventListener("click", function () {
+    viewerEnvironment.showGroundVolume = !viewerEnvironment.showGroundVolume;
+    applyViewerEnvironment();
+  });
   toggleSky.addEventListener("click", function () {
     viewerEnvironment.showSky = !viewerEnvironment.showSky;
     applyViewerEnvironment();
@@ -880,7 +1224,10 @@ async function boot() {
     card.addEventListener("toggle", requestViewportHeightSync);
   });
 
-  window.addEventListener("resize", requestViewportHeightSync);
+  window.addEventListener("resize", function () {
+    requestViewportHeightSync();
+    drawGroundSurfacePlot();
+  });
 
   if (typeof windowedLayoutQuery.addEventListener === "function") {
     windowedLayoutQuery.addEventListener("change", requestViewportHeightSync);
@@ -889,6 +1236,7 @@ async function boot() {
   }
 
   syncViewerEnvironmentControls();
+  runtimeMetricsTimer = window.setInterval(updateRuntimeMetrics, 250);
   render();
 }
 

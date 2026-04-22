@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <iostream>
 #include <cmath>
+#include <algorithm>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -27,6 +28,7 @@ struct StressReport {
 };
 
 constexpr double gravity_m_s2 = 9.80665;
+constexpr double pi = 3.14159265358979323846;
 
 StressReport calculate_stress_report(const ConcretePrism& prism, double applied_load_n) {
     const double area_m2 = prism.width_m * prism.depth_m;
@@ -56,6 +58,63 @@ bool is_inside_prism(const ConcretePrism& prism, double x_m, double y_m, double 
            y_m <= prism.height_m * 0.5;
 }
 
+double calculate_boussinesq_footing_stress_increment_pa(
+    const ConcretePrism& prism,
+    const StressReport& report,
+    double depth_below_surface_m,
+    double x_m,
+    double z_m) {
+    if (depth_below_surface_m <= 0.0) {
+        return 0.0;
+    }
+
+    const bool is_inside_footprint =
+        std::abs(x_m) <= prism.width_m * 0.5 &&
+        std::abs(z_m) <= prism.depth_m * 0.5;
+    const double shallow_cutoff_m = std::max(1e-4, std::min(prism.width_m, prism.depth_m) * 0.02);
+
+    if (depth_below_surface_m <= shallow_cutoff_m) {
+        return is_inside_footprint ? report.combined_stress_pa : 0.0;
+    }
+
+    const double uniform_pressure_pa = report.combined_stress_pa;
+    const int steps_x = std::clamp(
+        static_cast<int>(std::ceil(prism.width_m / std::max(prism.width_m / 26.0, depth_below_surface_m * 0.18))),
+        14,
+        30
+    );
+    const int steps_z = std::clamp(
+        static_cast<int>(std::ceil(prism.depth_m / std::max(prism.depth_m / 26.0, depth_below_surface_m * 0.18))),
+        14,
+        30
+    );
+    const double sample_width_m = prism.width_m / static_cast<double>(steps_x);
+    const double sample_depth_m = prism.depth_m / static_cast<double>(steps_z);
+    double stress_increment_pa = 0.0;
+
+    for (int x_index = 0; x_index < steps_x; ++x_index) {
+        const double sample_x_m =
+            -prism.width_m * 0.5 + (static_cast<double>(x_index) + 0.5) * sample_width_m;
+
+        for (int z_index = 0; z_index < steps_z; ++z_index) {
+            const double sample_z_m =
+                -prism.depth_m * 0.5 + (static_cast<double>(z_index) + 0.5) * sample_depth_m;
+            const double dx_m = x_m - sample_x_m;
+            const double dz_m = z_m - sample_z_m;
+            const double radius_squared_m2 =
+                dx_m * dx_m + dz_m * dz_m + depth_below_surface_m * depth_below_surface_m;
+            const double sample_load_n = uniform_pressure_pa * sample_width_m * sample_depth_m;
+            const double kernel =
+                (3.0 * std::pow(depth_below_surface_m, 3.0)) /
+                (2.0 * pi * std::pow(radius_squared_m2, 2.5));
+
+            stress_increment_pa += sample_load_n * kernel;
+        }
+    }
+
+    return stress_increment_pa;
+}
+
 double calculate_stress_at_point_pa(
     const ConcretePrism& prism,
     double applied_load_n,
@@ -73,19 +132,16 @@ double calculate_stress_at_point_pa(
 
     if (y_m < ground_top_y_m && y_m >= ground_top_y_m - ground_depth_m) {
         const double depth_below_surface_m = ground_top_y_m - y_m;
-        const double spread_width_m = prism.width_m + depth_below_surface_m;
-        const double spread_depth_m = prism.depth_m + depth_below_surface_m;
         const double geostatic_stress_pa = prism.density_kg_m3 * gravity_m_s2 * depth_below_surface_m;
-        const double transferred_load_n = report.self_weight_n + applied_load_n;
-        const bool is_inside_spread =
-            std::abs(x_m) <= spread_width_m * 0.5 &&
-            std::abs(z_m) <= spread_depth_m * 0.5;
+        const double footing_increment_pa = calculate_boussinesq_footing_stress_increment_pa(
+            prism,
+            report,
+            depth_below_surface_m,
+            x_m,
+            z_m
+        );
 
-        if (is_inside_spread) {
-            return geostatic_stress_pa + transferred_load_n / (spread_width_m * spread_depth_m);
-        }
-
-        return geostatic_stress_pa;
+        return geostatic_stress_pa + footing_increment_pa;
     }
 
     return 0.0;
@@ -156,7 +212,8 @@ void print_report(const ConcretePrism& prism, const StressReport& report) {
     std::cout << "\nSpatial field note:\n";
     std::cout << "  The browser viewer now samples sigma(x, y, z).\n";
     std::cout << "  Inside the prism this demo uses the axial + self-weight field above.\n";
-    std::cout << "  In the ground it uses a first-pass 2:1 load-spread estimate plus geostatic stress.\n";
+    std::cout << "  In the ground it uses a Boussinesq elastic half-space integration for a rectangular footing,\n";
+    std::cout << "  plus geostatic stress from the same density.\n";
 }
 
 extern "C" {

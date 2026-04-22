@@ -13,6 +13,18 @@ export interface StressSamplePoint {
   z: number;
 }
 
+export interface RuntimeCallMetrics {
+  averageCallDurationMs: number;
+  callsPerSecond: number;
+  functionCalls: {
+    calculateCombinedStressPa: number;
+    calculateStressAtPointPa: number;
+    printStressReport: number;
+  };
+  totalCallDurationMs: number;
+  totalCalls: number;
+}
+
 export interface StressState extends StressInputs {
   appliedLoadStressPa: number;
   areaM2: number;
@@ -25,8 +37,9 @@ export interface StressState extends StressInputs {
 
 export interface ConcreteStressRuntime {
   calculateCombinedStressPa(inputs: StressInputs): number;
-  printStressReport(inputs: StressInputs): void;
   calculateStressAtPointPa(inputs: StressInputs, point: StressSamplePoint): number;
+  getMetrics(): RuntimeCallMetrics;
+  printStressReport(inputs: StressInputs): void;
 }
 
 export interface LoadConcreteStressRuntimeOptions {
@@ -87,58 +100,115 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
     throw new Error("WebAssembly bridge initialised without ccall support.");
   }
 
+  const metricWindowMs = 1000;
+  const recentCalls: Array<{ count: number; timestampMs: number }> = [];
+  const functionCalls = {
+    calculateCombinedStressPa: 0,
+    calculateStressAtPointPa: 0,
+    printStressReport: 0,
+  };
+  let totalCallDurationMs = 0;
+  let totalCalls = 0;
+
+  function trimRecentCalls(nowMs: number) {
+    while (recentCalls.length && nowMs - recentCalls[0].timestampMs > metricWindowMs) {
+      recentCalls.shift();
+    }
+  }
+
+  function recordCall(functionName: keyof typeof functionCalls, durationMs: number) {
+    const nowMs = performance.now();
+
+    functionCalls[functionName] += 1;
+    totalCalls += 1;
+    totalCallDurationMs += durationMs;
+    recentCalls.push({ count: 1, timestampMs: nowMs });
+    trimRecentCalls(nowMs);
+  }
+
+  function callWithMetrics<T>(
+    functionName: keyof typeof functionCalls,
+    callback: () => T
+  ): T {
+    const startedAtMs = performance.now();
+    const result = callback();
+
+    recordCall(functionName, performance.now() - startedAtMs);
+    return result;
+  }
+
   return {
     calculateCombinedStressPa(inputs) {
       const params = toParams(inputs);
 
-      return module.ccall(
-        "calculate_combined_stress_pa",
-        "number",
-        ["number", "number", "number", "number", "number"],
-        [
-          params.widthM,
-          params.depthM,
-          params.heightM,
-          params.densityKgM3,
-          params.appliedLoadN,
-        ]
-      ) as number;
-    },
-    printStressReport(inputs) {
-      const params = toParams(inputs);
-
-      module.ccall(
-        "print_stress_report",
-        null,
-        ["number", "number", "number", "number", "number"],
-        [
-          params.widthM,
-          params.depthM,
-          params.heightM,
-          params.densityKgM3,
-          params.appliedLoadN,
-        ]
-      );
+      return callWithMetrics("calculateCombinedStressPa", function () {
+        return module.ccall(
+          "calculate_combined_stress_pa",
+          "number",
+          ["number", "number", "number", "number", "number"],
+          [
+            params.widthM,
+            params.depthM,
+            params.heightM,
+            params.densityKgM3,
+            params.appliedLoadN,
+          ]
+        ) as number;
+      });
     },
     calculateStressAtPointPa(inputs, point) {
       const params = toParams(inputs);
 
-      return module.ccall(
-        "calculate_stress_at_point_pa_export",
-        "number",
-        ["number", "number", "number", "number", "number", "number", "number", "number", "number"],
-        [
-          params.widthM,
-          params.depthM,
-          params.heightM,
-          params.densityKgM3,
-          params.appliedLoadN,
-          Number(point.groundDepthM),
-          Number(point.x),
-          Number(point.y),
-          Number(point.z),
-        ]
-      ) as number;
+      return callWithMetrics("calculateStressAtPointPa", function () {
+        return module.ccall(
+          "calculate_stress_at_point_pa_export",
+          "number",
+          ["number", "number", "number", "number", "number", "number", "number", "number", "number"],
+          [
+            params.widthM,
+            params.depthM,
+            params.heightM,
+            params.densityKgM3,
+            params.appliedLoadN,
+            Number(point.groundDepthM),
+            Number(point.x),
+            Number(point.y),
+            Number(point.z),
+          ]
+        ) as number;
+      });
+    },
+    getMetrics() {
+      const nowMs = performance.now();
+      trimRecentCalls(nowMs);
+
+      return {
+        averageCallDurationMs: totalCalls ? totalCallDurationMs / totalCalls : 0,
+        callsPerSecond: recentCalls.reduce(function (sum, entry) {
+          return sum + entry.count;
+        }, 0),
+        functionCalls: { ...functionCalls },
+        totalCallDurationMs,
+        totalCalls,
+      };
+    },
+    printStressReport(inputs) {
+      const params = toParams(inputs);
+
+      callWithMetrics("printStressReport", function () {
+        module.ccall(
+          "print_stress_report",
+          null,
+          ["number", "number", "number", "number", "number"],
+          [
+            params.widthM,
+            params.depthM,
+            params.heightM,
+            params.densityKgM3,
+            params.appliedLoadN,
+          ]
+        );
+      });
     },
   };
 }

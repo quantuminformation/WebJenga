@@ -8,7 +8,13 @@ export interface GroundStressField {
   columns: number;
   depthM: number;
   rows: number;
+  valuesPa: number[];
   widthM: number;
+}
+
+export interface GroundStressVolumeLayer extends GroundStressField {
+  opacity: number;
+  yM: number;
 }
 
 export interface ViewerProbeCoordinate {
@@ -30,6 +36,7 @@ export interface ViewerProbe {
 export interface ViewerState {
   depthM: number;
   groundStressField: GroundStressField | null;
+  groundStressVolumeLayers: GroundStressVolumeLayer[] | null;
   heightM: number;
   rotationXDeg: number;
   rotationYDeg: number;
@@ -42,6 +49,7 @@ export interface ViewerState {
   showReferenceFigure: boolean;
   showReferenceHouse: boolean;
   showGround: boolean;
+  showGroundVolume: boolean;
   showSection: boolean;
   showSky: boolean;
   volumeBottomColorCss: string;
@@ -634,6 +642,9 @@ export function createConcreteStressViewer(
   groundStressMesh.receiveShadow = true;
   environmentGroup.add(groundStressMesh);
 
+  const groundVolumeGroup = new THREE.Group();
+  environmentGroup.add(groundVolumeGroup);
+
   const contactShadow = new THREE.Mesh(
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshBasicMaterial({
@@ -798,8 +809,10 @@ export function createConcreteStressViewer(
     volumeSliceCount: 15,
     showSection: false,
     showGround: true,
+    showGroundVolume: true,
     showSky: true,
     groundStressField: null,
+    groundStressVolumeLayers: null,
   };
 
   function resize() {
@@ -1081,6 +1094,40 @@ export function createConcreteStressViewer(
     groundStressMesh.visible = true;
   }
 
+  function updateGroundStressVolume(state) {
+    disposeGroupChildren(groundVolumeGroup);
+
+    if (!state.showGround || !state.showGroundVolume || !state.groundStressVolumeLayers?.length) {
+      groundVolumeGroup.visible = false;
+      return;
+    }
+
+    groundVolumeGroup.visible = true;
+
+    state.groundStressVolumeLayers.forEach(function (layer, index) {
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(
+          layer.widthM,
+          layer.depthM,
+          Math.max(1, layer.columns - 1),
+          Math.max(1, layer.rows - 1)
+        ),
+        new THREE.MeshBasicMaterial({
+          depthWrite: false,
+          opacity: layer.opacity,
+          side: THREE.DoubleSide,
+          transparent: true,
+          vertexColors: true,
+        })
+      );
+      setGeometryColors(mesh.geometry, layer.colors);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(0, layer.yM, 0);
+      mesh.renderOrder = 1 + index * 0.01;
+      groundVolumeGroup.add(mesh);
+    });
+  }
+
   function toProbePayload(event, hit): ViewerProbe {
     const isGroundHit = hit.object === groundStressMesh;
     const pointInSpecimen = specimenGroup.worldToLocal(hit.point.clone());
@@ -1173,6 +1220,7 @@ export function createConcreteStressViewer(
       currentState = { ...currentState, ...nextState };
       updateEnvironment(currentState);
       updateGroundStressField(currentState);
+      updateGroundStressVolume(currentState);
       updatePrismGeometry(currentState);
       updateVolumeSlices(currentState);
       updateSectionGeometry(currentState);
@@ -1185,6 +1233,7 @@ export function createConcreteStressViewer(
       disposeGroupChildren(referenceFigure.group);
       disposeGroupChildren(referenceHouse.group);
       disposeGroupChildren(environmentGroup);
+      disposeGroupChildren(groundVolumeGroup);
       disposeGroupChildren(volumeSlicesGroup);
       shadowTexture.dispose();
       groundTexture.dispose();
