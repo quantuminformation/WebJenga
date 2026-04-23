@@ -51,6 +51,40 @@ struct StressReport {
 constexpr double gravity_m_s2 = 9.80665;
 constexpr double pi = 3.14159265358979323846;
 
+ConcretePrism build_prism(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3,
+    double specimen_youngs_modulus_mpa,
+    double specimen_poisson_ratio) {
+    return {
+        width_m,
+        depth_m,
+        height_m,
+        {
+            density_kg_m3,
+            specimen_youngs_modulus_mpa * 1'000'000.0,
+            specimen_poisson_ratio,
+        },
+    };
+}
+
+GroundDomain build_ground(
+    double density_kg_m3,
+    double ground_youngs_modulus_mpa,
+    double ground_poisson_ratio,
+    double ground_depth_m) {
+    return {
+        ground_depth_m,
+        {
+            density_kg_m3,
+            ground_youngs_modulus_mpa * 1'000'000.0,
+            ground_poisson_ratio,
+        },
+    };
+}
+
 double calculate_equivalent_modulus_pa(const ElasticMaterial& material) {
     const double denominator = std::max(1e-6, 1.0 - material.poisson_ratio * material.poisson_ratio);
     return material.youngs_modulus_pa / denominator;
@@ -174,11 +208,10 @@ double calculate_boussinesq_footing_stress_increment_pa(
 double calculate_stress_at_point_pa(
     const ConcretePrism& prism,
     const GroundDomain& ground,
-    double applied_load_n,
+    const StressReport& report,
     double x_m,
     double y_m,
     double z_m) {
-    const StressReport report = calculate_stress_report(prism, ground, applied_load_n);
     const double ground_top_y_m = -prism.height_m * 0.5;
 
     if (is_inside_prism(prism, x_m, y_m, z_m)) {
@@ -203,6 +236,94 @@ double calculate_stress_at_point_pa(
     }
 
     return 0.0;
+}
+
+double calculate_stress_at_point_pa(
+    const ConcretePrism& prism,
+    const GroundDomain& ground,
+    double applied_load_n,
+    double x_m,
+    double y_m,
+    double z_m) {
+    const StressReport report = calculate_stress_report(prism, ground, applied_load_n);
+    return calculate_stress_at_point_pa(prism, ground, report, x_m, y_m, z_m);
+}
+
+void sample_ground_grid_pa(
+    const ConcretePrism& prism,
+    const GroundDomain& ground,
+    double applied_load_n,
+    double sample_y_m,
+    double field_width_m,
+    double field_depth_m,
+    int columns,
+    int rows,
+    double* output_values_pa) {
+    if (!output_values_pa || columns <= 0 || rows <= 0) {
+        return;
+    }
+
+    const StressReport report = calculate_stress_report(prism, ground, applied_load_n);
+
+    for (int row_index = 0; row_index < rows; ++row_index) {
+        const double z_ratio = rows > 1 ? static_cast<double>(row_index) / static_cast<double>(rows - 1) : 0.0;
+        const double z_m = field_depth_m * 0.5 - z_ratio * field_depth_m;
+
+        for (int column_index = 0; column_index < columns; ++column_index) {
+            const double x_ratio =
+                columns > 1 ? static_cast<double>(column_index) / static_cast<double>(columns - 1) : 0.0;
+            const double x_m = -field_width_m * 0.5 + x_ratio * field_width_m;
+            const int value_index = row_index * columns + column_index;
+
+            output_values_pa[value_index] =
+                calculate_stress_at_point_pa(prism, ground, report, x_m, sample_y_m, z_m);
+        }
+    }
+}
+
+void sample_plane_section_pa(
+    const ConcretePrism& prism,
+    const GroundDomain& ground,
+    double applied_load_n,
+    double origin_x_m,
+    double origin_y_m,
+    double origin_z_m,
+    double u_axis_x,
+    double u_axis_y,
+    double u_axis_z,
+    double v_axis_x,
+    double v_axis_y,
+    double v_axis_z,
+    double u_min_m,
+    double u_max_m,
+    double v_min_m,
+    double v_max_m,
+    int columns,
+    int rows,
+    double* output_values_pa) {
+    if (!output_values_pa || columns <= 0 || rows <= 0) {
+        return;
+    }
+
+    const StressReport report = calculate_stress_report(prism, ground, applied_load_n);
+
+    for (int row_index = 0; row_index < rows; ++row_index) {
+        const double v_ratio = rows > 1 ? static_cast<double>(row_index) / static_cast<double>(rows - 1) : 0.0;
+        const double v_m = v_max_m - v_ratio * (v_max_m - v_min_m);
+
+        for (int column_index = 0; column_index < columns; ++column_index) {
+            const double u_ratio =
+                columns > 1 ? static_cast<double>(column_index) / static_cast<double>(columns - 1) : 0.0;
+            const double u_m = u_min_m + u_ratio * (u_max_m - u_min_m);
+            const double x_m = origin_x_m + u_axis_x * u_m + v_axis_x * v_m;
+            const double y_m = origin_y_m + u_axis_y * u_m + v_axis_y * v_m;
+            const double z_m = origin_z_m + u_axis_z * u_m + v_axis_z * v_m;
+            const int value_index = row_index * columns + column_index;
+
+            output_values_pa[value_index] =
+                calculate_stress_at_point_pa(prism, ground, report, x_m, y_m, z_m);
+        }
+    }
 }
 
 void print_report(const ConcretePrism& prism, const GroundDomain& ground, const StressReport& report) {
@@ -299,24 +420,20 @@ EMSCRIPTEN_KEEPALIVE double calculate_combined_stress_pa(
     double ground_youngs_modulus_mpa,
     double ground_poisson_ratio,
     double applied_load_n) {
-    const ConcretePrism prism{
+    const ConcretePrism prism = build_prism(
         width_m,
         depth_m,
         height_m,
-        {
-            density_kg_m3,
-            specimen_youngs_modulus_mpa * 1'000'000.0,
-            specimen_poisson_ratio,
-        },
-    };
-    const GroundDomain ground{
-        std::max(height_m * 1.5, std::max(width_m, depth_m) * 4.0),
-        {
-            density_kg_m3,
-            ground_youngs_modulus_mpa * 1'000'000.0,
-            ground_poisson_ratio,
-        },
-    };
+        density_kg_m3,
+        specimen_youngs_modulus_mpa,
+        specimen_poisson_ratio
+    );
+    const GroundDomain ground = build_ground(
+        density_kg_m3,
+        ground_youngs_modulus_mpa,
+        ground_poisson_ratio,
+        std::max(height_m * 1.5, std::max(width_m, depth_m) * 4.0)
+    );
 
     const StressReport report = calculate_stress_report(prism, ground, applied_load_n);
     return report.combined_stress_pa;
@@ -332,24 +449,20 @@ EMSCRIPTEN_KEEPALIVE double calculate_max_contact_stress_pa(
     double ground_youngs_modulus_mpa,
     double ground_poisson_ratio,
     double applied_load_n) {
-    const ConcretePrism prism{
+    const ConcretePrism prism = build_prism(
         width_m,
         depth_m,
         height_m,
-        {
-            density_kg_m3,
-            specimen_youngs_modulus_mpa * 1'000'000.0,
-            specimen_poisson_ratio,
-        },
-    };
-    const GroundDomain ground{
-        std::max(height_m * 1.5, std::max(width_m, depth_m) * 4.0),
-        {
-            density_kg_m3,
-            ground_youngs_modulus_mpa * 1'000'000.0,
-            ground_poisson_ratio,
-        },
-    };
+        density_kg_m3,
+        specimen_youngs_modulus_mpa,
+        specimen_poisson_ratio
+    );
+    const GroundDomain ground = build_ground(
+        density_kg_m3,
+        ground_youngs_modulus_mpa,
+        ground_poisson_ratio,
+        std::max(height_m * 1.5, std::max(width_m, depth_m) * 4.0)
+    );
 
     const StressReport report = calculate_stress_report(prism, ground, applied_load_n);
     return report.boundary.max_contact_pressure_pa;
@@ -365,24 +478,20 @@ EMSCRIPTEN_KEEPALIVE void print_stress_report(
     double ground_youngs_modulus_mpa,
     double ground_poisson_ratio,
     double applied_load_n) {
-    const ConcretePrism prism{
+    const ConcretePrism prism = build_prism(
         width_m,
         depth_m,
         height_m,
-        {
-            density_kg_m3,
-            specimen_youngs_modulus_mpa * 1'000'000.0,
-            specimen_poisson_ratio,
-        },
-    };
-    const GroundDomain ground{
-        std::max(height_m * 1.5, std::max(width_m, depth_m) * 4.0),
-        {
-            density_kg_m3,
-            ground_youngs_modulus_mpa * 1'000'000.0,
-            ground_poisson_ratio,
-        },
-    };
+        density_kg_m3,
+        specimen_youngs_modulus_mpa,
+        specimen_poisson_ratio
+    );
+    const GroundDomain ground = build_ground(
+        density_kg_m3,
+        ground_youngs_modulus_mpa,
+        ground_poisson_ratio,
+        std::max(height_m * 1.5, std::max(width_m, depth_m) * 4.0)
+    );
 
     const StressReport report = calculate_stress_report(prism, ground, applied_load_n);
     print_report(prism, ground, report);
@@ -420,26 +529,132 @@ EMSCRIPTEN_KEEPALIVE double calculate_stress_at_point_pa_export(
     double x_m,
     double y_m,
     double z_m) {
-    const ConcretePrism prism{
+    const ConcretePrism prism = build_prism(
         width_m,
         depth_m,
         height_m,
-        {
-            density_kg_m3,
-            specimen_youngs_modulus_mpa * 1'000'000.0,
-            specimen_poisson_ratio,
-        },
-    };
-    const GroundDomain ground{
-        ground_depth_m,
-        {
-            density_kg_m3,
-            ground_youngs_modulus_mpa * 1'000'000.0,
-            ground_poisson_ratio,
-        },
-    };
+        density_kg_m3,
+        specimen_youngs_modulus_mpa,
+        specimen_poisson_ratio
+    );
+    const GroundDomain ground = build_ground(
+        density_kg_m3,
+        ground_youngs_modulus_mpa,
+        ground_poisson_ratio,
+        ground_depth_m
+    );
 
     return calculate_stress_at_point_pa(prism, ground, applied_load_n, x_m, y_m, z_m);
+}
+
+EMSCRIPTEN_KEEPALIVE void sample_ground_grid_pa_export(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3,
+    double specimen_youngs_modulus_mpa,
+    double specimen_poisson_ratio,
+    double ground_youngs_modulus_mpa,
+    double ground_poisson_ratio,
+    double applied_load_n,
+    double ground_depth_m,
+    double sample_y_m,
+    double field_width_m,
+    double field_depth_m,
+    int columns,
+    int rows,
+    double* output_values_pa) {
+    const ConcretePrism prism = build_prism(
+        width_m,
+        depth_m,
+        height_m,
+        density_kg_m3,
+        specimen_youngs_modulus_mpa,
+        specimen_poisson_ratio
+    );
+    const GroundDomain ground = build_ground(
+        density_kg_m3,
+        ground_youngs_modulus_mpa,
+        ground_poisson_ratio,
+        ground_depth_m
+    );
+
+    sample_ground_grid_pa(
+        prism,
+        ground,
+        applied_load_n,
+        sample_y_m,
+        field_width_m,
+        field_depth_m,
+        columns,
+        rows,
+        output_values_pa
+    );
+}
+
+EMSCRIPTEN_KEEPALIVE void sample_plane_section_pa_export(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3,
+    double specimen_youngs_modulus_mpa,
+    double specimen_poisson_ratio,
+    double ground_youngs_modulus_mpa,
+    double ground_poisson_ratio,
+    double applied_load_n,
+    double ground_depth_m,
+    double origin_x_m,
+    double origin_y_m,
+    double origin_z_m,
+    double u_axis_x,
+    double u_axis_y,
+    double u_axis_z,
+    double v_axis_x,
+    double v_axis_y,
+    double v_axis_z,
+    double u_min_m,
+    double u_max_m,
+    double v_min_m,
+    double v_max_m,
+    int columns,
+    int rows,
+    double* output_values_pa) {
+    const ConcretePrism prism = build_prism(
+        width_m,
+        depth_m,
+        height_m,
+        density_kg_m3,
+        specimen_youngs_modulus_mpa,
+        specimen_poisson_ratio
+    );
+    const GroundDomain ground = build_ground(
+        density_kg_m3,
+        ground_youngs_modulus_mpa,
+        ground_poisson_ratio,
+        ground_depth_m
+    );
+
+    sample_plane_section_pa(
+        prism,
+        ground,
+        applied_load_n,
+        origin_x_m,
+        origin_y_m,
+        origin_z_m,
+        u_axis_x,
+        u_axis_y,
+        u_axis_z,
+        v_axis_x,
+        v_axis_y,
+        v_axis_z,
+        u_min_m,
+        u_max_m,
+        v_min_m,
+        v_max_m,
+        columns,
+        rows,
+        output_values_pa
+    );
 }
 
 EMSCRIPTEN_KEEPALIVE void print_self_weight_report(

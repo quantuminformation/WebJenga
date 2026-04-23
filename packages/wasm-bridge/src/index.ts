@@ -24,10 +24,34 @@ export interface RuntimeCallMetrics {
     calculateCombinedStressPa: number;
     calculateMaxContactStressPa: number;
     calculateStressAtPointPa: number;
+    sampleGroundGridPa: number;
+    samplePlaneSectionPa: number;
     printStressReport: number;
   };
   totalCallDurationMs: number;
   totalCalls: number;
+}
+
+export interface GroundGridSample {
+  columns: number;
+  fieldDepthM: number;
+  fieldWidthM: number;
+  groundDepthM: number;
+  rows: number;
+  sampleY: number;
+}
+
+export interface PlaneSectionSample {
+  columns: number;
+  groundDepthM: number;
+  origin: { x: number; y: number; z: number };
+  rows: number;
+  uAxis: { x: number; y: number; z: number };
+  uMaxM: number;
+  uMinM: number;
+  vAxis: { x: number; y: number; z: number };
+  vMaxM: number;
+  vMinM: number;
 }
 
 export interface StressState extends StressInputs {
@@ -47,6 +71,8 @@ export interface ConcreteStressRuntime {
   calculateStressAtPointPa(inputs: StressInputs, point: StressSamplePoint): number;
   getMetrics(): RuntimeCallMetrics;
   printStressReport(inputs: StressInputs): void;
+  sampleGroundGridPa(inputs: StressInputs, sample: GroundGridSample): number[];
+  samplePlaneSectionPa(inputs: StressInputs, sample: PlaneSectionSample): number[];
 }
 
 export interface LoadConcreteStressRuntimeOptions {
@@ -61,6 +87,9 @@ interface RuntimeHandlers {
 }
 
 interface EmscriptenModuleLike {
+  HEAPF64?: Float64Array;
+  _free?(pointer: number): void;
+  _malloc?(size: number): number;
   ccall?(
     identifier: string,
     returnType: "number" | null,
@@ -117,6 +146,8 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
     calculateCombinedStressPa: 0,
     calculateMaxContactStressPa: 0,
     calculateStressAtPointPa: 0,
+    sampleGroundGridPa: 0,
+    samplePlaneSectionPa: 0,
     printStressReport: 0,
   };
   let totalCallDurationMs = 0;
@@ -232,6 +263,110 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
             Number(point.z),
           ]
         ) as number;
+      });
+    },
+    sampleGroundGridPa(inputs, sample) {
+      const params = toParams(inputs);
+      const valueCount = Math.max(0, Math.trunc(sample.columns) * Math.trunc(sample.rows));
+
+      return callWithMetrics("sampleGroundGridPa", function () {
+        if (!module._malloc || !module._free || !module.HEAPF64) {
+          throw new Error("WebAssembly bridge initialised without heap allocation support.");
+        }
+
+        const outputPointer = module._malloc(valueCount * Float64Array.BYTES_PER_ELEMENT);
+
+        try {
+          module.ccall!(
+            "sample_ground_grid_pa_export",
+            null,
+            [
+              "number", "number", "number", "number", "number", "number", "number", "number",
+              "number", "number", "number", "number", "number", "number", "number", "number",
+            ],
+            [
+              params.widthM,
+              params.depthM,
+              params.heightM,
+              params.densityKgM3,
+              params.specimenYoungsModulusMpa,
+              params.specimenPoissonRatio,
+              params.groundYoungsModulusMpa,
+              params.groundPoissonRatio,
+              params.appliedLoadN,
+              Number(sample.groundDepthM),
+              Number(sample.sampleY),
+              Number(sample.fieldWidthM),
+              Number(sample.fieldDepthM),
+              Math.trunc(sample.columns),
+              Math.trunc(sample.rows),
+              outputPointer,
+            ]
+          );
+
+          const heapOffset = outputPointer / Float64Array.BYTES_PER_ELEMENT;
+          return Array.from(module.HEAPF64.subarray(heapOffset, heapOffset + valueCount));
+        } finally {
+          module._free(outputPointer);
+        }
+      });
+    },
+    samplePlaneSectionPa(inputs, sample) {
+      const params = toParams(inputs);
+      const valueCount = Math.max(0, Math.trunc(sample.columns) * Math.trunc(sample.rows));
+
+      return callWithMetrics("samplePlaneSectionPa", function () {
+        if (!module._malloc || !module._free || !module.HEAPF64) {
+          throw new Error("WebAssembly bridge initialised without heap allocation support.");
+        }
+
+        const outputPointer = module._malloc(valueCount * Float64Array.BYTES_PER_ELEMENT);
+
+        try {
+          module.ccall!(
+            "sample_plane_section_pa_export",
+            null,
+            [
+              "number", "number", "number", "number", "number", "number", "number", "number",
+              "number", "number", "number", "number", "number", "number", "number", "number",
+              "number", "number", "number", "number", "number", "number", "number", "number",
+              "number", "number",
+            ],
+            [
+              params.widthM,
+              params.depthM,
+              params.heightM,
+              params.densityKgM3,
+              params.specimenYoungsModulusMpa,
+              params.specimenPoissonRatio,
+              params.groundYoungsModulusMpa,
+              params.groundPoissonRatio,
+              params.appliedLoadN,
+              Number(sample.groundDepthM),
+              Number(sample.origin.x),
+              Number(sample.origin.y),
+              Number(sample.origin.z),
+              Number(sample.uAxis.x),
+              Number(sample.uAxis.y),
+              Number(sample.uAxis.z),
+              Number(sample.vAxis.x),
+              Number(sample.vAxis.y),
+              Number(sample.vAxis.z),
+              Number(sample.uMinM),
+              Number(sample.uMaxM),
+              Number(sample.vMinM),
+              Number(sample.vMaxM),
+              Math.trunc(sample.columns),
+              Math.trunc(sample.rows),
+              outputPointer,
+            ]
+          );
+
+          const heapOffset = outputPointer / Float64Array.BYTES_PER_ELEMENT;
+          return Array.from(module.HEAPF64.subarray(heapOffset, heapOffset + valueCount));
+        } finally {
+          module._free(outputPointer);
+        }
       });
     },
     getMetrics() {

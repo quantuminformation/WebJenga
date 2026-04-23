@@ -8,6 +8,10 @@
     "dev": "pnpm run build:wasm && pnpm --filter @webjenga/web dev",
     "preview": "pnpm --filter @webjenga/web preview",
     "screenshots": "node ./scripts/capture-screenshots.mjs",
+    "smoke:ui": "node ./scripts/smoke-ui.mjs",
+    "test": "pnpm run test:solver && pnpm run test:bridge",
+    "test:bridge": "node --test tests/wasm-bridge.test.mjs",
+    "test:solver": "mkdir -p build/tests && g++ -std=c++17 tests/solver-regression.cpp -o build/tests/solver-regression && ./build/tests/solver-regression",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

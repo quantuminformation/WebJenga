@@ -37,6 +37,11 @@ export interface ViewerVector3Like {
   z: number;
 }
 
+export interface ViewerCameraPose {
+  position: ViewerVector3Like;
+  target: ViewerVector3Like;
+}
+
 export interface ViewerSectionPlane {
   domain: "ground" | "specimen";
   normal: ViewerVector3Like;
@@ -65,6 +70,7 @@ export interface ViewerProbe {
 }
 
 export interface ViewerState {
+  cameraPose: ViewerCameraPose | null;
   depthM: number;
   groundStressField: GroundStressField | null;
   groundStressVolumeLayers: GroundStressVolumeLayer[] | null;
@@ -93,6 +99,7 @@ export interface ViewerState {
 
 export interface ConcreteStressViewerOptions {
   container: HTMLElement;
+  onCameraChange?(cameraPose: ViewerCameraPose): void;
   onProbe?(probe: ViewerProbe): void;
   onProbeLeave?(): void;
   onProbeSelect?(probe: ViewerProbe | null): void;
@@ -471,6 +478,7 @@ export function createConcreteStressViewer(
   options: ConcreteStressViewerOptions
 ): ConcreteStressViewer {
   const container = options.container;
+  const onCameraChange = options.onCameraChange || function () {};
   const onProbe = options.onProbe || function () {};
   const onProbeLeave = options.onProbeLeave || function () {};
   const onProbeSelect = options.onProbeSelect || function () {};
@@ -706,10 +714,24 @@ export function createConcreteStressViewer(
   prismEdges.renderOrder = 2;
   specimenGroup.add(prismEdges);
 
+  const selectionBracketMaterial = new THREE.LineBasicMaterial({
+    color: 0x2b6bff,
+    transparent: true,
+    opacity: 0.92,
+    depthTest: false,
+  });
+  const selectionBrackets = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    selectionBracketMaterial
+  );
+  selectionBrackets.visible = false;
+  selectionBrackets.renderOrder = 6;
+  specimenGroup.add(selectionBrackets);
+
   const sectionMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.34,
     side: THREE.DoubleSide,
     depthTest: false,
     vertexColors: true,
@@ -808,6 +830,7 @@ export function createConcreteStressViewer(
   let currentMaxDimension = 1;
   let currentSceneExtent = 1;
   let currentState: ViewerState = {
+    cameraPose: null,
     widthM: 1.0,
     depthM: 1.0,
     heightM: 10.0,
@@ -833,6 +856,21 @@ export function createConcreteStressViewer(
     groundStressVolumeLayers: null,
     selectedSectionPlane: null,
   };
+
+  function getCameraPose(): ViewerCameraPose {
+    return {
+      position: toVector3Like(camera.position),
+      target: toVector3Like(controls.target),
+    };
+  }
+
+  function applyCameraPose(cameraPose: ViewerCameraPose) {
+    camera.position.copy(toVector3(cameraPose.position));
+    controls.target.copy(toVector3(cameraPose.target));
+    hasFramed = true;
+    clampCameraAboveGround();
+    controls.update();
+  }
 
   function resize() {
     const width = Math.max(container.clientWidth, 1);
@@ -1134,10 +1172,49 @@ export function createConcreteStressViewer(
       new THREE.Color(state.volumeBottomColorCss),
       new THREE.Color(state.volumeTopColorCss)
     );
-    prismMaterial.opacity = state.showSection ? 0.18 : 0.3;
+    prismMaterial.opacity = state.showSection ? 0.11 : 0.18;
     replaceGeometry(prismEdges, new THREE.EdgesGeometry(prismMesh.geometry));
 
     specimenGroup.rotation.set(0, 0, 0);
+  }
+
+  function updateSelectionBrackets(state) {
+    if (!state.selectedSectionPlane) {
+      selectionBrackets.visible = false;
+      return;
+    }
+
+    const halfWidth = state.widthM * 0.5;
+    const halfHeight = state.heightM * 0.5;
+    const halfDepth = state.depthM * 0.5;
+    const cornerLength = Math.max(Math.min(state.widthM, state.heightM, state.depthM) * 0.18, 0.07);
+    const inset = Math.max(currentMaxDimension * 0.006, 0.01);
+    const points: THREE.Vector3[] = [];
+    const addCorner = function (x: number, y: number, z: number) {
+      const sx = Math.sign(x) || 1;
+      const sy = Math.sign(y) || 1;
+      const sz = Math.sign(z) || 1;
+      const corner = new THREE.Vector3(
+        x + sx * inset,
+        y + sy * inset,
+        z + sz * inset
+      );
+
+      points.push(corner, corner.clone().add(new THREE.Vector3(-sx * cornerLength, 0, 0)));
+      points.push(corner, corner.clone().add(new THREE.Vector3(0, -sy * cornerLength, 0)));
+      points.push(corner, corner.clone().add(new THREE.Vector3(0, 0, -sz * cornerLength)));
+    };
+
+    [-halfWidth, halfWidth].forEach(function (x) {
+      [-halfHeight, halfHeight].forEach(function (y) {
+        [-halfDepth, halfDepth].forEach(function (z) {
+          addCorner(x, y, z);
+        });
+      });
+    });
+
+    replaceGeometry(selectionBrackets, new THREE.BufferGeometry().setFromPoints(points));
+    selectionBrackets.visible = true;
   }
 
   function updateEnvironment(state) {
@@ -1248,6 +1325,7 @@ export function createConcreteStressViewer(
     prismLineMaterial.color.set(isDark ? 0xc7d3e3 : 0x102033);
     prismLineMaterial.opacity = isDark ? 0.28 : 0.22;
     sectionLineMaterial.color.set(isDark ? 0xe7f0ff : 0x102033);
+    selectionBracketMaterial.color.set(isDark ? 0xaed0ff : 0x2b6bff);
     (previewSectionOutline.material as THREE.LineBasicMaterial).color.set(isDark ? 0x88b4ff : 0x2b6bff);
     (hoverCrosshair.material as THREE.LineBasicMaterial).color.set(isDark ? 0xb7d1ff : 0x2b6bff);
     sectionNormal.line.material.color.set(isDark ? 0x88b4ff : 0x2b6bff);
@@ -1334,7 +1412,7 @@ export function createConcreteStressViewer(
         new THREE.MeshBasicMaterial({
           color: sliceColor,
           depthWrite: false,
-          opacity: 0.34,
+          opacity: 0.18,
           side: THREE.DoubleSide,
           transparent: true,
         })
@@ -1569,11 +1647,14 @@ export function createConcreteStressViewer(
     const hit = raycaster.intersectObjects(hitTargets, false)[0];
 
     if (!hit) {
-      onProbeSelect(null);
       return;
     }
 
     const probe = toProbePayload(event, hit);
+
+    if (probe.domain !== "specimen") {
+      return;
+    }
 
     onProbeSelect(probe);
   }
@@ -1589,6 +1670,8 @@ export function createConcreteStressViewer(
       updatePreviewSection(null);
       onProbeLeave();
     }
+
+    onCameraChange(getCameraPose());
   });
 
   const resizeObserver = new ResizeObserver(resize);
@@ -1607,12 +1690,16 @@ export function createConcreteStressViewer(
   return {
     update(nextState) {
       currentState = { ...currentState, ...nextState };
+      if (nextState.cameraPose) {
+        applyCameraPose(nextState.cameraPose);
+      }
       updateEnvironment(currentState);
       updateTheme(currentState);
       updateGroundStressField(currentState);
       updateGroundStressVolume(currentState);
       updateStressFlowPath(currentState);
       updatePrismGeometry(currentState);
+      updateSelectionBrackets(currentState);
       updateVolumeSlices(currentState);
       updateSectionGeometry(currentState);
       updateCameraEnvelope(currentSceneExtent);
