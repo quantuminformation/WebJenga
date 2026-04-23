@@ -10,3 +10,4 @@ hello
 apps/web/public/wasm/
 node_modules/
 /web/
+artifacts/

@@ -388,22 +388,25 @@ document.querySelector("#app").innerHTML = `
     </section>
 
     <section class="insights-shell">
-      <article class="insight-card insight-card--plot">
-        <div class="insight-card__header">
-          <div>
-            <p class="eyebrow eyebrow--card">Ground surface plot</p>
-            <h2>Ground-surface stress section</h2>
+      <details class="insight-card insight-card--plot">
+        <summary>Ground-surface stress plot</summary>
+        <div class="insight-card__body">
+          <div class="insight-card__header">
+            <div>
+              <p class="eyebrow eyebrow--card">Ground surface plot</p>
+              <h2>Ground-surface stress section</h2>
+            </div>
+            <p>Projected x/z surface built from the same sampled field the 3D ground overlay uses.</p>
           </div>
-          <p>Projected x/z surface built from the same sampled field the 3D ground overlay uses.</p>
+          <div class="ground-plot-frame">
+            <canvas id="ground-plot-canvas" aria-label="Ground surface stress plot"></canvas>
+          </div>
+          <div class="ground-plot-meta">
+            <span id="ground-plot-range">Surface range 0.0 to 0.0 kPa</span>
+            <span id="ground-plot-footprint">Loaded footprint 0.10 x 0.10 m</span>
+          </div>
         </div>
-        <div class="ground-plot-frame">
-          <canvas id="ground-plot-canvas" aria-label="Ground surface stress plot"></canvas>
-        </div>
-        <div class="ground-plot-meta">
-          <span id="ground-plot-range">Surface range 0.0 to 0.0 kPa</span>
-          <span id="ground-plot-footprint">Loaded footprint 0.10 x 0.10 m</span>
-        </div>
-      </article>
+      </details>
     </section>
 
     <section class="report-shell">

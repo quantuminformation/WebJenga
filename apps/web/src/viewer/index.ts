@@ -851,7 +851,7 @@ export function createConcreteStressViewer(
     controls.maxDistance = sceneExtent * 14;
     controls.maxPolarAngle = Math.PI / 2 - 0.04;
 
-    const desiredDistance = sceneExtent * 2.15;
+    const desiredDistance = sceneExtent * 1.4;
     const currentDistance = camera.position.distanceTo(controls.target);
 
     if (!hasFramed || currentDistance > desiredDistance * 2.2 || currentDistance < desiredDistance * 0.45) {
@@ -862,7 +862,7 @@ export function createConcreteStressViewer(
       if (direction.lengthSq() < 1e-6) {
         direction.set(0.62, 0.42, 0.66).normalize();
       }
-      controls.target.set(0, currentState.heightM * 0.16, 0);
+      controls.target.set(0, currentState.heightM * 0.22, 0);
       camera.position.copy(controls.target.clone().add(direction.multiplyScalar(desiredDistance)));
       hasFramed = true;
     }

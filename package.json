@@ -7,10 +7,12 @@
     "build:wasm": "bash ./scripts/build-wasm.sh",
     "dev": "pnpm run build:wasm && pnpm --filter @webjenga/web dev",
     "preview": "pnpm --filter @webjenga/web preview",
+    "screenshots": "node ./scripts/capture-screenshots.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "playwright-core": "^1.56.1",
     "typescript": "^6.0.3"
   }
 }

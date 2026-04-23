@@ -170,7 +170,7 @@ select {
   z-index: 3;
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
 }
 
@@ -181,7 +181,7 @@ select {
   display: flex;
   justify-content: space-between;
   gap: 18px;
-  padding: 12px 14px;
+  padding: 10px 12px;
 }
 
 .viewport-head__copy {
@@ -281,35 +281,35 @@ h1 {
 .overlay-card--left {
   top: 92px;
   left: 12px;
-  width: min(316px, calc(100vw - 24px));
-  padding: 12px;
+  width: min(300px, calc(100vw - 24px));
+  padding: 10px;
 }
 
 .overlay-card--right {
   top: 92px;
   right: 12px;
-  width: min(290px, calc(100vw - 24px));
-  padding: 12px;
+  width: min(276px, calc(100vw - 24px));
+  padding: 10px;
 }
 
 .overlay-card--section {
   left: 50%;
   bottom: 82px;
   transform: translateX(-50%);
-  width: clamp(320px, calc(100% - 640px), 440px);
-  padding: 12px;
+  width: clamp(320px, calc(100% - 620px), 408px);
+  padding: 10px;
 }
 
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 7px;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .field.span-2 {
@@ -332,8 +332,8 @@ h1 {
 .tool-field select,
 .tool-field input {
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 12px;
+  padding: 7px 9px;
+  border-radius: 11px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: var(--panel-strong);
   color: var(--text);
@@ -366,8 +366,8 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  padding: 8px 10px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
@@ -377,7 +377,7 @@ h1 {
 }
 
 .collapse-card {
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: rgba(255, 255, 255, 0.7);
   overflow: hidden;
@@ -388,7 +388,7 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   cursor: pointer;
   list-style: none;
 }
@@ -433,11 +433,11 @@ h1 {
 .collapse-card__body {
   display: grid;
   gap: 8px;
-  padding: 0 12px 12px;
+  padding: 0 10px 10px;
 }
 
 .collapse-card[open] summary {
-  padding-bottom: 8px;
+  padding-bottom: 6px;
 }
 
 .toggle-row {
@@ -448,7 +448,7 @@ h1 {
 
 .toggle-chip {
   min-width: 0;
-  padding: 8px 11px;
+  padding: 7px 10px;
   border-radius: 999px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: rgba(255, 255, 255, 0.78);
@@ -482,8 +482,8 @@ h1 {
 .mini-chip,
 .metric-pill,
 .stress-readout {
-  padding: 10px 12px;
-  border-radius: 14px;
+  padding: 8px 10px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.74);
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
@@ -569,8 +569,8 @@ h1 {
   transform: translateX(-50%);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  width: min(440px, calc(100% - 380px));
+  gap: 6px;
+  width: min(390px, calc(100% - 360px));
 }
 
 .metric-pill {
@@ -651,6 +651,21 @@ h1 {
   padding: 18px;
 }
 
+.insight-card summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.insight-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.insight-card__body {
+  margin-top: 14px;
+}
+
 .insight-card__header {
   display: flex;
   align-items: flex-start;
@@ -688,11 +703,11 @@ h1 {
 }
 
 .ground-plot-frame--overlay {
-  min-height: 192px;
+  min-height: 178px;
 }
 
 .ground-plot-frame--overlay canvas {
-  height: 192px;
+  height: 178px;
 }
 
 .ground-plot-meta {
@@ -736,7 +751,7 @@ h1 {
   padding: 8px 10px;
   border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.64);
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .stress-flow-callout strong {
@@ -784,6 +799,7 @@ h1 {
 :root[data-theme="dark"] .collapse-card,
 :root[data-theme="dark"] .mini-chip,
 :root[data-theme="dark"] .metric-pill,
+:root[data-theme="dark"] .stress-flow-callout,
 :root[data-theme="dark"] .stress-readout,
 :root[data-theme="dark"] .report-card,
 :root[data-theme="dark"] .insight-card,
@@ -834,15 +850,15 @@ h1 {
 @media (max-width: 1220px) {
   .overlay-card--left,
   .overlay-card--right {
-    width: 286px;
+    width: 272px;
   }
 
   .overlay-strip {
-    width: min(400px, calc(100% - 340px));
+    width: min(368px, calc(100% - 320px));
   }
 
   .overlay-card--section {
-    width: clamp(300px, calc(100% - 580px), 360px);
+    width: clamp(300px, calc(100% - 540px), 352px);
   }
 }
 
