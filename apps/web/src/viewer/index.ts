@@ -31,6 +31,27 @@ export interface ViewerProbeCoordinate {
   value: number;
 }
 
+export interface ViewerVector3Like {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ViewerSectionPlane {
+  domain: "ground" | "specimen";
+  normal: ViewerVector3Like;
+  origin: ViewerVector3Like;
+  title: string;
+  uAxis: ViewerVector3Like;
+  uLabel: string;
+  uMaxM: number;
+  uMinM: number;
+  vAxis: ViewerVector3Like;
+  vLabel: string;
+  vMaxM: number;
+  vMinM: number;
+}
+
 export interface ViewerProbe {
   clientX: number;
   clientY: number;
@@ -38,8 +59,9 @@ export interface ViewerProbe {
   domain: "ground" | "specimen";
   localPoint: THREE.Vector3;
   modelPoint: THREE.Vector3;
-  sectionAxis: "xy" | "xz" | "yz";
-  sectionOffsetRatio: number;
+  plane: ViewerSectionPlane;
+  selectableSection: boolean;
+  surfaceNormal: THREE.Vector3;
 }
 
 export interface ViewerState {
@@ -47,18 +69,18 @@ export interface ViewerState {
   groundStressField: GroundStressField | null;
   groundStressVolumeLayers: GroundStressVolumeLayer[] | null;
   heightM: number;
+  highlightedSectionPoint: ViewerVector3Like | null;
   rotationXDeg: number;
   rotationYDeg: number;
-  sectionAxis: "xy" | "xz" | "yz";
   sectionBottomColorCss: string;
   sectionGradientMode: "uniform" | "vertical";
-  sectionOffsetRatio: number;
   sectionTopColorCss: string;
   sectionUniformColorCss: string;
   showReferenceFigure: boolean;
   showReferenceHouse: boolean;
   showGround: boolean;
   showGroundVolume: boolean;
+  selectedSectionPlane: ViewerSectionPlane | null;
   showSection: boolean;
   showSky: boolean;
   stressFlowPath: StressFlowPath | null;
@@ -73,6 +95,7 @@ export interface ConcreteStressViewerOptions {
   container: HTMLElement;
   onProbe?(probe: ViewerProbe): void;
   onProbeLeave?(): void;
+  onProbeSelect?(probe: ViewerProbe | null): void;
 }
 
 export interface ConcreteStressViewer {
@@ -203,220 +226,124 @@ function createCloudCluster() {
   return cloud;
 }
 
-function createReferenceHouse() {
-  const group = new THREE.Group();
-  const wallHeight = 3.1;
-  const roofHeight = 2.2;
-  const houseWidth = 8.4;
-  const houseDepth = 6.8;
-  const concreteMaterial = new THREE.MeshStandardMaterial({
-    color: 0xbfc5cc,
-    roughness: 0.96,
+function createOrientedCylinder(
+  from: THREE.Vector3,
+  to: THREE.Vector3,
+  radiusTop: number,
+  radiusBottom: number,
+  radialSegments: number,
+  material: THREE.Material
+) {
+  const direction = to.clone().sub(from);
+  const length = Math.max(direction.length(), 1e-6);
+  const center = from.clone().add(to).multiplyScalar(0.5);
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(radiusTop, radiusBottom, length, radialSegments, 3),
+    material
+  );
+
+  mesh.position.copy(center);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function createReferenceTree() {
+  const tree = new THREE.Group();
+  const trunkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x755233,
     metalness: 0,
-  });
-  const roofMaterial = new THREE.MeshStandardMaterial({
-    color: 0xacb3bb,
     roughness: 0.94,
-    metalness: 0,
   });
-  const accentMaterial = new THREE.MeshStandardMaterial({
-    color: 0x657384,
-    roughness: 0.82,
+  const foliageMaterial = new THREE.MeshStandardMaterial({
+    color: 0x5f8d43,
     metalness: 0,
+    roughness: 0.96,
+    flatShading: true,
   });
+  const trunkParts: THREE.Mesh[] = [];
+  const foliageParts: THREE.Mesh[] = [];
 
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(houseWidth, wallHeight, houseDepth),
-    concreteMaterial
+  const trunkLower = createOrientedCylinder(
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 7.4, 0),
+    0.34,
+    0.58,
+    20,
+    trunkMaterial
   );
-  body.position.y = wallHeight * 0.5;
-  body.castShadow = true;
-  body.receiveShadow = true;
-  group.add(body);
+  trunkLower.name = "tree-trunk";
+  tree.add(trunkLower);
+  trunkParts.push(trunkLower);
 
-  const roofShape = new THREE.Shape();
-  roofShape.moveTo(-houseWidth * 0.56, 0);
-  roofShape.lineTo(0, roofHeight);
-  roofShape.lineTo(houseWidth * 0.56, 0);
-  roofShape.closePath();
+  const trunkUpper = createOrientedCylinder(
+    new THREE.Vector3(0, 7.0, 0),
+    new THREE.Vector3(0.12, 9.2, -0.08),
+    0.2,
+    0.32,
+    18,
+    trunkMaterial
+  );
+  trunkUpper.name = "tree-trunk";
+  tree.add(trunkUpper);
+  trunkParts.push(trunkUpper);
 
-  const roofGeometry = new THREE.ExtrudeGeometry(roofShape, {
-    bevelEnabled: false,
-    depth: houseDepth * 1.06,
-    steps: 1,
-  });
-  roofGeometry.translate(0, wallHeight, -(houseDepth * 1.06) / 2);
-  const roof = new THREE.Mesh(roofGeometry, roofMaterial);
-  roof.castShadow = true;
-  roof.receiveShadow = true;
-  group.add(roof);
-
-  const facadeFeatures = [
-    { height: 2.05, width: 0.96, x: -2.05, y: 1.02 },
-    { height: 1.2, width: 1.36, x: 1.95, y: 1.82 },
-    { height: 1.2, width: 1.36, x: 0.2, y: 1.82 },
+  const branchDescriptors = [
+    { from: [0.08, 6.8, 0.02], to: [1.8, 8.1, 0.9], top: 0.08, bottom: 0.16 },
+    { from: [-0.05, 7.3, -0.04], to: [-1.9, 8.7, -0.5], top: 0.07, bottom: 0.15 },
+    { from: [0.04, 7.7, 0.06], to: [1.2, 9.1, -1.3], top: 0.06, bottom: 0.13 },
+    { from: [-0.06, 7.9, 0.04], to: [-1.4, 9.35, 1.15], top: 0.06, bottom: 0.12 },
+    { from: [0.02, 8.1, -0.05], to: [0.95, 9.55, 1.5], top: 0.05, bottom: 0.11 },
+    { from: [-0.02, 8.0, 0.03], to: [-0.95, 9.4, -1.55], top: 0.05, bottom: 0.11 },
   ];
-  facadeFeatures.forEach(function (feature) {
-    const accent = new THREE.Mesh(
-      new THREE.PlaneGeometry(feature.width, feature.height),
-      accentMaterial
+
+  branchDescriptors.forEach(function (descriptor) {
+    const branch = createOrientedCylinder(
+      new THREE.Vector3(...descriptor.from),
+      new THREE.Vector3(...descriptor.to),
+      descriptor.top,
+      descriptor.bottom,
+      12,
+      trunkMaterial
     );
-    accent.position.set(feature.x, feature.y, houseDepth * 0.5 + 0.01);
-    group.add(accent);
+    branch.name = "tree-branch";
+    tree.add(branch);
+    trunkParts.push(branch);
   });
 
-  const outline = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(houseWidth, wallHeight + roofHeight, houseDepth)),
-    new THREE.LineBasicMaterial({
-      color: 0x586473,
-      transparent: true,
-      opacity: 0.22,
-    })
-  );
-  outline.position.y = (wallHeight + roofHeight) * 0.5;
-  group.add(outline);
+  for (let index = 0; index < 26; index += 1) {
+    const azimuth = (index / 26) * Math.PI * 2;
+    const heightBand = Math.floor(index / 7);
+    const radius = 1.6 + (Math.sin(index * 1.73) * 0.5 + 0.5) * 1.35;
+    const y = 7.2 + heightBand * 0.72 + Math.sin(index * 0.91) * 0.42;
+    const offsetX = Math.cos(azimuth) * radius;
+    const offsetZ = Math.sin(azimuth) * radius * 0.92;
+    const blob = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.88 + (index % 4) * 0.18, 2),
+      foliageMaterial
+    );
 
-  return {
-    depth: houseDepth,
-    group,
-    height: wallHeight + roofHeight,
-    width: houseWidth,
+    blob.position.set(offsetX, y, offsetZ);
+    blob.scale.set(
+      1.05 + (index % 3) * 0.18,
+      0.92 + ((index + 1) % 3) * 0.16,
+      0.96 + ((index + 2) % 3) * 0.14
+    );
+    blob.rotation.set(index * 0.21, index * 0.37, index * 0.17);
+    blob.castShadow = true;
+    blob.receiveShadow = true;
+    blob.name = "tree-foliage";
+    tree.add(blob);
+    foliageParts.push(blob);
+  }
+
+  tree.userData = {
+    foliageParts,
+    trunkParts,
   };
+  return tree;
 }
-
-function createReferenceFigure() {
-  const group = new THREE.Group();
-  const concreteMaterial = new THREE.MeshStandardMaterial({
-    color: 0xadb5be,
-    roughness: 0.97,
-    metalness: 0,
-  });
-  const accentMaterial = new THREE.MeshStandardMaterial({
-    color: 0x7f8995,
-    roughness: 0.9,
-    metalness: 0,
-  });
-
-  const leftLeg = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08, 0.09, 0.88, 12),
-    concreteMaterial
-  );
-  leftLeg.position.set(-0.09, 0.44, 0);
-  leftLeg.castShadow = true;
-  leftLeg.receiveShadow = true;
-  group.add(leftLeg);
-
-  const rightLeg = leftLeg.clone();
-  rightLeg.position.x = 0.09;
-  group.add(rightLeg);
-
-  const torso = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.18, 0.52, 6, 12),
-    concreteMaterial
-  );
-  torso.position.y = 1.12;
-  torso.castShadow = true;
-  torso.receiveShadow = true;
-  group.add(torso);
-
-  const leftArm = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.055, 0.06, 0.68, 12),
-    accentMaterial
-  );
-  leftArm.position.set(-0.27, 1.08, 0);
-  leftArm.rotation.z = 0.18;
-  group.add(leftArm);
-
-  const rightArm = leftArm.clone();
-  rightArm.position.x = 0.27;
-  rightArm.rotation.z = -0.18;
-  group.add(rightArm);
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 20, 20), concreteMaterial);
-  head.position.y = 1.69;
-  head.castShadow = true;
-  head.receiveShadow = true;
-  group.add(head);
-
-  return {
-    depth: 0.34,
-    group,
-    height: 1.82,
-    width: 0.62,
-  };
-}
-
-const AXIS_CONFIG = {
-  xy: {
-    label: "XY section",
-    normal: new THREE.Vector3(0, 1, 0),
-    getSize(state) {
-      return { width: state.widthM, height: state.depthM };
-    },
-    getPosition(state) {
-      return new THREE.Vector3(
-        0,
-        -state.heightM / 2 + state.sectionOffsetRatio * state.heightM,
-        0
-      );
-    },
-    setRotation(object) {
-      object.rotation.set(-Math.PI / 2, 0, 0);
-    },
-    mapCoords(localPoint, state) {
-      return [
-        { label: "x", value: localPoint.x + state.widthM / 2 },
-        { label: "z", value: localPoint.y + state.depthM / 2 },
-      ];
-    },
-  },
-  xz: {
-    label: "XZ section",
-    normal: new THREE.Vector3(0, 0, 1),
-    getSize(state) {
-      return { width: state.widthM, height: state.heightM };
-    },
-    getPosition(state) {
-      return new THREE.Vector3(
-        0,
-        0,
-        -state.depthM / 2 + state.sectionOffsetRatio * state.depthM
-      );
-    },
-    setRotation(object) {
-      object.rotation.set(0, 0, 0);
-    },
-    mapCoords(localPoint, state) {
-      return [
-        { label: "x", value: localPoint.x + state.widthM / 2 },
-        { label: "y", value: localPoint.y + state.heightM / 2 },
-      ];
-    },
-  },
-  yz: {
-    label: "YZ section",
-    normal: new THREE.Vector3(1, 0, 0),
-    getSize(state) {
-      return { width: state.depthM, height: state.heightM };
-    },
-    getPosition(state) {
-      return new THREE.Vector3(
-        -state.widthM / 2 + state.sectionOffsetRatio * state.widthM,
-        0,
-        0
-      );
-    },
-    setRotation(object) {
-      object.rotation.set(0, Math.PI / 2, 0);
-    },
-    mapCoords(localPoint, state) {
-      return [
-        { label: "z", value: localPoint.x + state.depthM / 2 },
-        { label: "y", value: localPoint.y + state.heightM / 2 },
-      ];
-    },
-  },
-};
 
 function mapVolumeCoords(localPoint, state) {
   return [
@@ -452,6 +379,58 @@ function setSolidGeometryColor(geometry, color) {
 
 function setGeometryColors(geometry, colors) {
   geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
+}
+
+function toVector3(vectorLike: ViewerVector3Like) {
+  return new THREE.Vector3(vectorLike.x, vectorLike.y, vectorLike.z);
+}
+
+function toVector3Like(vector: THREE.Vector3): ViewerVector3Like {
+  return {
+    x: vector.x,
+    y: vector.y,
+    z: vector.z,
+  };
+}
+
+function getPlaneCenter(plane: ViewerSectionPlane) {
+  const origin = toVector3(plane.origin);
+  const uAxis = toVector3(plane.uAxis);
+  const vAxis = toVector3(plane.vAxis);
+  const uMid = (plane.uMinM + plane.uMaxM) * 0.5;
+  const vMid = (plane.vMinM + plane.vMaxM) * 0.5;
+
+  return origin.add(uAxis.multiplyScalar(uMid)).add(vAxis.multiplyScalar(vMid));
+}
+
+function applyPlaneTransform(
+  object: THREE.Object3D,
+  plane: ViewerSectionPlane,
+  centerOverride?: THREE.Vector3
+) {
+  const uAxis = toVector3(plane.uAxis).normalize();
+  const vAxis = toVector3(plane.vAxis).normalize();
+  const normal = toVector3(plane.normal).normalize();
+  const rotationMatrix = new THREE.Matrix4().makeBasis(uAxis, vAxis, normal);
+
+  object.quaternion.setFromRotationMatrix(rotationMatrix);
+  object.position.copy(centerOverride || getPlaneCenter(plane));
+}
+
+function copyPlaneWithExtents(
+  plane: ViewerSectionPlane,
+  uMinM: number,
+  uMaxM: number,
+  vMinM: number,
+  vMaxM: number
+): ViewerSectionPlane {
+  return {
+    ...plane,
+    uMaxM,
+    uMinM,
+    vMaxM,
+    vMinM,
+  };
 }
 
 function setVerticalGradientGeometryColor(geometry, heightM, bottomColor, topColor) {
@@ -494,6 +473,7 @@ export function createConcreteStressViewer(
   const container = options.container;
   const onProbe = options.onProbe || function () {};
   const onProbeLeave = options.onProbeLeave || function () {};
+  const onProbeSelect = options.onProbeSelect || function () {};
 
   if (!container) {
     throw new Error("createConcreteStressViewer requires a container element.");
@@ -522,6 +502,12 @@ export function createConcreteStressViewer(
   controls.target.set(0, 0.32, 0);
   controls.minPolarAngle = 0.08;
   controls.maxPolarAngle = Math.PI / 2 - 0.04;
+  controls.addEventListener("start", function () {
+    renderer.domElement.classList.add("is-dragging");
+  });
+  controls.addEventListener("end", function () {
+    renderer.domElement.classList.remove("is-dragging");
+  });
 
   const hemisphereLight = new THREE.HemisphereLight(0xf7fbff, 0x6f8a68, 1.65);
   scene.add(hemisphereLight);
@@ -671,39 +657,12 @@ export function createConcreteStressViewer(
   contactShadow.renderOrder = 2;
   environmentGroup.add(contactShadow);
 
-  const referenceHouse = createReferenceHouse();
-  const referenceHouseShadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({
-      alphaMap: shadowTexture,
-      color: 0x102033,
-      depthWrite: false,
-      opacity: 0.18,
-      transparent: true,
-    })
-  );
-  referenceHouseShadow.rotation.x = -Math.PI / 2;
-  referenceHouseShadow.renderOrder = 2;
-  environmentGroup.add(referenceHouseShadow);
-  const referenceFigure = createReferenceFigure();
-  const referenceFigureShadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({
-      alphaMap: shadowTexture,
-      color: 0x102033,
-      depthWrite: false,
-      opacity: 0.12,
-      transparent: true,
-    })
-  );
-  referenceFigureShadow.rotation.x = -Math.PI / 2;
-  referenceFigureShadow.renderOrder = 2;
-  environmentGroup.add(referenceFigureShadow);
+  const referenceTree = createReferenceTree();
+  referenceTree.renderOrder = 2;
+  environmentGroup.add(referenceTree);
 
   const worldGroup = new THREE.Group();
   scene.add(worldGroup);
-  worldGroup.add(referenceHouse.group);
-  worldGroup.add(referenceFigure.group);
 
   const specimenGroup = new THREE.Group();
   worldGroup.add(specimenGroup);
@@ -714,7 +673,7 @@ export function createConcreteStressViewer(
   const prismMaterial = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     transparent: true,
-    opacity: 0.62,
+    opacity: 0.3,
     roughness: 0.52,
     metalness: 0,
     side: THREE.DoubleSide,
@@ -752,11 +711,12 @@ export function createConcreteStressViewer(
     transparent: true,
     opacity: 0.88,
     side: THREE.DoubleSide,
+    depthTest: false,
     vertexColors: true,
   });
   const sectionPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), sectionMaterial);
   sectionPlane.renderOrder = 3;
-  specimenGroup.add(sectionPlane);
+  worldGroup.add(sectionPlane);
 
   const sectionOutline = new THREE.LineSegments(
     new THREE.EdgesGeometry(sectionPlane.geometry),
@@ -764,10 +724,36 @@ export function createConcreteStressViewer(
       color: 0x102033,
       transparent: true,
       opacity: 0.9,
+      depthTest: false,
     })
   );
   sectionOutline.renderOrder = 4;
-  specimenGroup.add(sectionOutline);
+  worldGroup.add(sectionOutline);
+
+  const previewSectionMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.2,
+    side: THREE.DoubleSide,
+    depthTest: false,
+  });
+  const previewSectionPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), previewSectionMaterial);
+  previewSectionPlane.visible = false;
+  previewSectionPlane.renderOrder = 3;
+  worldGroup.add(previewSectionPlane);
+
+  const previewSectionOutline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(previewSectionPlane.geometry),
+    new THREE.LineBasicMaterial({
+      color: 0x2b6bff,
+      transparent: true,
+      opacity: 0.72,
+      depthTest: false,
+    })
+  );
+  previewSectionOutline.visible = false;
+  previewSectionOutline.renderOrder = 4;
+  worldGroup.add(previewSectionOutline);
 
   const sectionNormal = new THREE.ArrowHelper(
     new THREE.Vector3(0, 1, 0),
@@ -782,17 +768,33 @@ export function createConcreteStressViewer(
   sectionNormal.cone.material.transparent = true;
   sectionNormal.cone.material.opacity = 0.9;
   sectionNormal.renderOrder = 4;
-  specimenGroup.add(sectionNormal);
+  worldGroup.add(sectionNormal);
 
-  const hoverMarker = new THREE.Mesh(
-    new THREE.SphereGeometry(0.035, 20, 20),
-    new THREE.MeshBasicMaterial({
+  const hoverCrosshair = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({
       color: 0x2b6bff,
+      transparent: true,
+      opacity: 0.92,
     })
   );
-  hoverMarker.visible = false;
-  hoverMarker.renderOrder = 5;
-  worldGroup.add(hoverMarker);
+  hoverCrosshair.visible = false;
+  hoverCrosshair.renderOrder = 7;
+  worldGroup.add(hoverCrosshair);
+
+  const sectionPointMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.03, 18, 18),
+    new THREE.MeshBasicMaterial({
+      color: 0x2fcc71,
+      transparent: true,
+      opacity: 0.96,
+      depthWrite: false,
+      depthTest: false,
+    })
+  );
+  sectionPointMarker.visible = false;
+  sectionPointMarker.renderOrder = 8;
+  worldGroup.add(sectionPointMarker);
 
   const stressFlowGroup = new THREE.Group();
   stressFlowGroup.visible = false;
@@ -805,32 +807,31 @@ export function createConcreteStressViewer(
   let currentGroundLevel = -0.25;
   let currentMaxDimension = 1;
   let currentSceneExtent = 1;
-  let currentAxis = AXIS_CONFIG.xy;
   let currentState: ViewerState = {
-    widthM: 0.1,
-    depthM: 0.1,
-    heightM: 1.0,
-    sectionAxis: "xy",
-    sectionOffsetRatio: 0.5,
+    widthM: 1.0,
+    depthM: 1.0,
+    heightM: 10.0,
+    highlightedSectionPoint: null,
     rotationXDeg: 18,
     rotationYDeg: -28,
     sectionBottomColorCss: "rgb(229, 57, 53)",
     sectionGradientMode: "uniform",
     sectionTopColorCss: "rgb(63, 125, 255)",
     sectionUniformColorCss: "rgb(88, 210, 199)",
-    showReferenceFigure: true,
-    showReferenceHouse: true,
+    showReferenceFigure: false,
+    showReferenceHouse: false,
     volumeBottomColorCss: "rgb(229, 57, 53)",
     volumeTopColorCss: "rgb(63, 125, 255)",
     volumeSliceCount: 15,
     showSection: false,
     showGround: true,
     showGroundVolume: true,
-    showSky: true,
+    showSky: false,
     stressFlowPath: null,
     theme: "light",
     groundStressField: null,
     groundStressVolumeLayers: null,
+    selectedSectionPlane: null,
   };
 
   function resize() {
@@ -871,12 +872,169 @@ export function createConcreteStressViewer(
     controls.update();
   }
 
-  function updateSectionGeometry(state) {
-    currentAxis = AXIS_CONFIG[state.sectionAxis] || AXIS_CONFIG.xy;
-    const showSection = Boolean(state.showSection);
+  function getGroundPlaneExtents() {
+    const maxDimension = Math.max(currentState.widthM, currentState.depthM, currentState.heightM, 0.15);
 
-    const planeSize = currentAxis.getSize(state);
-    const planePosition = currentAxis.getPosition(state);
+    return {
+      depthM: currentState.groundStressField ? currentState.groundStressField.depthM : maxDimension * 4,
+      widthM: currentState.groundStressField ? currentState.groundStressField.widthM : maxDimension * 4,
+    };
+  }
+
+  function createSectionPlaneFromHit(
+    modelPoint: THREE.Vector3,
+    surfaceNormal: THREE.Vector3
+  ): ViewerSectionPlane {
+    const extents = getGroundPlaneExtents();
+    const absNormal = {
+      x: Math.abs(surfaceNormal.x),
+      y: Math.abs(surfaceNormal.y),
+      z: Math.abs(surfaceNormal.z),
+    };
+    const makePlane = function (
+      domain: "ground" | "specimen",
+      title: string,
+      origin: THREE.Vector3,
+      uAxis: THREE.Vector3,
+      uMinM: number,
+      uMaxM: number,
+      uLabel: string,
+      vAxis: THREE.Vector3,
+      vMinM: number,
+      vMaxM: number,
+      vLabel: string
+    ): ViewerSectionPlane {
+      return {
+        domain,
+        normal: toVector3Like(uAxis.clone().cross(vAxis).normalize()),
+        origin: toVector3Like(origin),
+        title,
+        uAxis: toVector3Like(uAxis.normalize()),
+        uLabel,
+        uMaxM,
+        uMinM,
+        vAxis: toVector3Like(vAxis.normalize()),
+        vLabel,
+        vMaxM,
+        vMinM,
+      };
+    };
+
+    if (absNormal.y >= absNormal.x && absNormal.y >= absNormal.z) {
+      if (modelPoint.y <= currentGroundLevel + 0.02) {
+        return makePlane(
+          "ground",
+          "Ground plan section",
+          modelPoint,
+          new THREE.Vector3(1, 0, 0),
+          -extents.widthM / 2 - modelPoint.x,
+          extents.widthM / 2 - modelPoint.x,
+          "x",
+          new THREE.Vector3(0, 0, 1),
+          -extents.depthM / 2 - modelPoint.z,
+          extents.depthM / 2 - modelPoint.z,
+          "z"
+        );
+      }
+
+      return makePlane(
+        "specimen",
+        "Top plan section",
+        modelPoint,
+        new THREE.Vector3(1, 0, 0),
+        -currentState.widthM / 2 - modelPoint.x,
+        currentState.widthM / 2 - modelPoint.x,
+        "x",
+        new THREE.Vector3(0, 0, 1),
+        -currentState.depthM / 2 - modelPoint.z,
+        currentState.depthM / 2 - modelPoint.z,
+        "z"
+      );
+    }
+
+    if (absNormal.x >= absNormal.z) {
+      const inwardNormalX = -Math.sign(surfaceNormal.x) || 1;
+      return makePlane(
+        "specimen",
+        "XZ normal section",
+        modelPoint,
+        new THREE.Vector3(inwardNormalX, 0, 0),
+        0,
+        inwardNormalX > 0 ? currentState.widthM / 2 - modelPoint.x : modelPoint.x + currentState.widthM / 2,
+        "n",
+        new THREE.Vector3(0, 0, 1),
+        -currentState.depthM / 2 - modelPoint.z,
+        currentState.depthM / 2 - modelPoint.z,
+        "z"
+      );
+    }
+
+    const inwardNormalZ = -Math.sign(surfaceNormal.z) || 1;
+    return makePlane(
+      "specimen",
+      "XZ normal section",
+      modelPoint,
+      new THREE.Vector3(0, 0, inwardNormalZ),
+      0,
+      inwardNormalZ > 0 ? currentState.depthM / 2 - modelPoint.z : modelPoint.z + currentState.depthM / 2,
+      "n",
+      new THREE.Vector3(1, 0, 0),
+      -currentState.widthM / 2 - modelPoint.x,
+      currentState.widthM / 2 - modelPoint.x,
+      "x"
+    );
+  }
+
+  function getHoverCrosshairAxes(surfaceNormal: THREE.Vector3) {
+    const normal = surfaceNormal.clone().normalize();
+    let verticalAxis = new THREE.Vector3(0, 1, 0);
+
+    if (Math.abs(normal.dot(verticalAxis)) > 0.92) {
+      verticalAxis = new THREE.Vector3(0, 0, 1);
+    } else {
+      verticalAxis.sub(normal.clone().multiplyScalar(normal.dot(verticalAxis))).normalize();
+    }
+
+    const horizontalAxis = normal.clone().cross(verticalAxis).normalize();
+
+    return {
+      horizontalAxis,
+      verticalAxis,
+    };
+  }
+
+  function getHoverCrosshairSize(worldPoint: THREE.Vector3) {
+    return clamp(
+      (() => {
+        const distanceToCamera = camera.position.distanceTo(worldPoint);
+        const remPx = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+        const viewHeightM =
+          2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5) * Math.max(distanceToCamera, 0.01);
+        const worldPerPixel = viewHeightM / Math.max(renderer.domElement.clientHeight, 1);
+        return worldPerPixel * remPx * 0.7;
+      })(),
+      0.03,
+      Math.max(0.08, currentMaxDimension * 0.08)
+    );
+  }
+
+  function updateHoverCrosshair(probe: ViewerProbe) {
+    const { horizontalAxis, verticalAxis } = getHoverCrosshairAxes(probe.surfaceNormal);
+    const halfSize = getHoverCrosshairSize(probe.modelPoint) * 0.5;
+    const center = probe.modelPoint.clone();
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      center.clone().add(horizontalAxis.clone().multiplyScalar(-halfSize)),
+      center.clone().add(horizontalAxis.clone().multiplyScalar(halfSize)),
+      center.clone().add(verticalAxis.clone().multiplyScalar(-halfSize)),
+      center.clone().add(verticalAxis.clone().multiplyScalar(halfSize)),
+    ]);
+
+    replaceGeometry(hoverCrosshair, geometry);
+    hoverCrosshair.visible = true;
+  }
+
+  function updateSectionGeometry(state) {
+    const showSection = Boolean(state.showSection && state.selectedSectionPlane);
     const sectionTopColor = new THREE.Color(
       state.sectionTopColorCss || state.sectionUniformColorCss || state.volumeTopColorCss
     );
@@ -887,13 +1045,29 @@ export function createConcreteStressViewer(
       state.sectionUniformColorCss || state.sectionBottomColorCss || state.sectionTopColorCss
     );
 
-    replaceGeometry(sectionPlane, new THREE.PlaneGeometry(planeSize.width, planeSize.height));
+    const visiblePlane = showSection && state.selectedSectionPlane ? state.selectedSectionPlane : null;
+
+    if (!showSection || !state.selectedSectionPlane || !visiblePlane) {
+      sectionPlane.visible = false;
+      sectionOutline.visible = false;
+      sectionNormal.visible = false;
+      sectionPointMarker.visible = Boolean(state.highlightedSectionPoint && state.selectedSectionPlane);
+      if (state.highlightedSectionPoint) {
+        sectionPointMarker.position.copy(toVector3(state.highlightedSectionPoint));
+      }
+      return;
+    }
+
+    const planeWidth = Math.max(visiblePlane.uMaxM - visiblePlane.uMinM, 0.02);
+    const planeHeight = Math.max(visiblePlane.vMaxM - visiblePlane.vMinM, 0.02);
+
+    replaceGeometry(sectionPlane, new THREE.PlaneGeometry(planeWidth, planeHeight));
     replaceGeometry(sectionOutline, new THREE.EdgesGeometry(sectionPlane.geometry));
 
     if (state.sectionGradientMode === "vertical") {
       setVerticalGradientGeometryColor(
         sectionPlane.geometry,
-        planeSize.height,
+        planeHeight,
         sectionBottomColor,
         sectionTopColor
       );
@@ -901,18 +1075,54 @@ export function createConcreteStressViewer(
       setSolidGeometryColor(sectionPlane.geometry, sectionUniformColor);
     }
 
-    currentAxis.setRotation(sectionPlane);
-    currentAxis.setRotation(sectionOutline);
-
-    sectionPlane.position.copy(planePosition);
-    sectionOutline.position.copy(planePosition);
+    applyPlaneTransform(sectionPlane, visiblePlane);
+    applyPlaneTransform(sectionOutline, visiblePlane);
     sectionPlane.visible = showSection;
     sectionOutline.visible = showSection;
 
-    sectionNormal.position.copy(planePosition);
-    sectionNormal.setDirection(currentAxis.normal.clone());
-    sectionNormal.setLength(Math.max(planeSize.width, planeSize.height) * 0.46, 0.12, 0.06);
-    sectionNormal.visible = showSection;
+    const sectionCenter = getPlaneCenter(visiblePlane);
+    const sectionNormalVector = toVector3(visiblePlane.normal).normalize();
+    sectionNormal.position.copy(sectionCenter);
+    sectionNormal.setDirection(sectionNormalVector);
+    sectionNormal.setLength(Math.max(planeWidth, planeHeight) * 0.22, 0.12, 0.06);
+    sectionNormal.visible = false;
+
+    if (state.highlightedSectionPoint) {
+      const markerPoint = toVector3(state.highlightedSectionPoint);
+      const markerOffset = sectionNormalVector.clone().multiplyScalar(0.003 * currentMaxDimension);
+      sectionPointMarker.position.copy(markerPoint.add(markerOffset));
+      sectionPointMarker.scale.setScalar(Math.max(0.7, Math.min(1.4, currentMaxDimension * 0.9)));
+      sectionPointMarker.visible = true;
+    } else {
+      sectionPointMarker.visible = false;
+    }
+  }
+
+  function updatePreviewSection(probe: ViewerProbe | null) {
+    if (!probe) {
+      previewSectionPlane.visible = false;
+      previewSectionOutline.visible = false;
+      hoverCrosshair.visible = false;
+      return;
+    }
+
+    previewSectionPlane.visible = false;
+    previewSectionOutline.visible = false;
+
+    if (probe.plane.domain === "specimen") {
+      const planeWidth = Math.max(probe.plane.uMaxM - probe.plane.uMinM, 0.02);
+      const planeHeight = Math.max(probe.plane.vMaxM - probe.plane.vMinM, 0.02);
+      const planeInset = probe.surfaceNormal.clone().normalize().multiplyScalar(-0.008 * currentMaxDimension);
+
+      replaceGeometry(previewSectionPlane, new THREE.PlaneGeometry(planeWidth, planeHeight));
+      replaceGeometry(previewSectionOutline, new THREE.EdgesGeometry(previewSectionPlane.geometry));
+      applyPlaneTransform(previewSectionPlane, probe.plane, getPlaneCenter(probe.plane).add(planeInset));
+      applyPlaneTransform(previewSectionOutline, probe.plane, getPlaneCenter(probe.plane).add(planeInset));
+      previewSectionPlane.visible = false;
+      previewSectionOutline.visible = true;
+    }
+
+    updateHoverCrosshair(probe);
   }
 
   function updatePrismGeometry(state) {
@@ -924,6 +1134,7 @@ export function createConcreteStressViewer(
       new THREE.Color(state.volumeBottomColorCss),
       new THREE.Color(state.volumeTopColorCss)
     );
+    prismMaterial.opacity = state.showSection ? 0.18 : 0.3;
     replaceGeometry(prismEdges, new THREE.EdgesGeometry(prismMesh.geometry));
 
     specimenGroup.rotation.set(0, 0, 0);
@@ -938,19 +1149,6 @@ export function createConcreteStressViewer(
     const skyScale = maxDimension * 22;
     const sunDirection = new THREE.Vector3(-0.9, 0.82, -0.42).normalize();
     const horizonRadius = maxDimension * 16;
-    const houseWidth = referenceHouse.width;
-    const houseDepth = referenceHouse.depth;
-    const houseHeight = referenceHouse.height;
-    const houseOffsetX =
-      state.widthM * 0.5 + houseWidth * 0.5 + 1.8;
-    const houseOffsetZ =
-      Math.max(state.depthM * 0.5 + houseDepth * 0.1, houseDepth * 0.12);
-    const figureWidth = referenceFigure.width;
-    const figureDepth = referenceFigure.depth;
-    const figureHeight = referenceFigure.height;
-    const figureOffsetX = houseOffsetX - houseWidth * 0.22;
-    const figureOffsetZ = houseOffsetZ + houseDepth * 0.34;
-
     currentGroundLevel = groundLevel;
     currentMaxDimension = maxDimension;
     currentSceneExtent = Math.max(maxDimension * 1.85, 1.9);
@@ -1024,36 +1222,15 @@ export function createConcreteStressViewer(
       1
     );
 
-    referenceHouse.group.visible = Boolean(state.showGround && state.showReferenceHouse);
-    referenceHouse.group.scale.setScalar(1);
-    referenceHouse.group.position.set(houseOffsetX, groundLevel, houseOffsetZ);
+    referenceTree.visible = Boolean(state.showGround);
+    referenceTree.position.set(-7.4, groundLevel, -13.1);
+    referenceTree.rotation.y = 0.68;
 
-    referenceHouseShadow.visible = Boolean(state.showGround && state.showReferenceHouse);
-    referenceHouseShadow.position.set(
-      houseOffsetX,
-      groundLevel + Math.max(maxDimension, 1) * 0.003,
-      houseOffsetZ
-    );
-    referenceHouseShadow.scale.set(houseWidth * 1.35, houseDepth * 1.35, 1);
-
-    referenceFigure.group.visible = Boolean(state.showGround && state.showReferenceFigure);
-    referenceFigure.group.scale.setScalar(1);
-    referenceFigure.group.position.set(figureOffsetX, groundLevel, figureOffsetZ);
-
-    referenceFigureShadow.visible = Boolean(state.showGround && state.showReferenceFigure);
-    referenceFigureShadow.position.set(
-      figureOffsetX,
-      groundLevel + Math.max(maxDimension, 1) * 0.003,
-      figureOffsetZ
-    );
-    referenceFigureShadow.scale.set(figureWidth * 1.5, figureDepth * 2.1, 1);
   }
 
   function updateTheme(state) {
     const isDark = state.theme === "dark";
     const groundMaterial = groundPlane.material as THREE.MeshStandardMaterial;
-    const houseShadowMaterial = referenceHouseShadow.material as THREE.MeshBasicMaterial;
-    const figureShadowMaterial = referenceFigureShadow.material as THREE.MeshBasicMaterial;
     const contactShadowMaterial = contactShadow.material as THREE.MeshBasicMaterial;
     const prismLineMaterial = prismEdges.material as THREE.LineBasicMaterial;
     const sectionLineMaterial = sectionOutline.material as THREE.LineBasicMaterial;
@@ -1071,11 +1248,11 @@ export function createConcreteStressViewer(
     prismLineMaterial.color.set(isDark ? 0xc7d3e3 : 0x102033);
     prismLineMaterial.opacity = isDark ? 0.28 : 0.22;
     sectionLineMaterial.color.set(isDark ? 0xe7f0ff : 0x102033);
+    (previewSectionOutline.material as THREE.LineBasicMaterial).color.set(isDark ? 0x88b4ff : 0x2b6bff);
+    (hoverCrosshair.material as THREE.LineBasicMaterial).color.set(isDark ? 0xb7d1ff : 0x2b6bff);
     sectionNormal.line.material.color.set(isDark ? 0x88b4ff : 0x2b6bff);
     sectionNormal.cone.material.color.set(isDark ? 0x88b4ff : 0x2b6bff);
     contactShadowMaterial.opacity = isDark ? 0.38 : 0.28;
-    houseShadowMaterial.opacity = isDark ? 0.22 : 0.18;
-    figureShadowMaterial.opacity = isDark ? 0.16 : 0.12;
     setVerticalGradientGeometryColor(
       skyDome.geometry,
       2,
@@ -1099,6 +1276,30 @@ export function createConcreteStressViewer(
         material.color.set(isDark ? 0xd7e2ff : 0xffffff);
         material.opacity = isDark ? 0.42 : 0.78;
       }
+    });
+
+    const referenceTreeData = referenceTree.userData as {
+      foliageParts?: THREE.Mesh[];
+      trunkParts?: THREE.Mesh[];
+    };
+
+    referenceTreeData.trunkParts?.forEach(function (part) {
+      const material = part.material as THREE.MeshStandardMaterial;
+      material.color.set(isDark ? 0x5d4735 : 0x755233);
+      material.roughness = isDark ? 0.98 : 0.94;
+    });
+    referenceTreeData.foliageParts?.forEach(function (part, index) {
+      const material = part.material as THREE.MeshStandardMaterial;
+      material.color.set(
+        isDark
+          ? index % 2 === 0
+            ? 0x415d36
+            : 0x4b6a3c
+          : index % 2 === 0
+            ? 0x5f8d43
+            : 0x6d9b4e
+      );
+      material.roughness = isDark ? 0.98 : 0.96;
     });
   }
 
@@ -1282,19 +1483,23 @@ export function createConcreteStressViewer(
   }
 
   function toProbePayload(event, hit): ViewerProbe {
-    const isGroundHit = hit.object === groundStressMesh;
+    const isGroundHit = hit.object === groundStressMesh || hit.object === groundPlane;
     const pointInSpecimen = specimenGroup.worldToLocal(hit.point.clone());
-    const modelPoint = isGroundHit ? hit.point.clone() : pointInSpecimen;
-    const coords = currentState.showSection
-      ? currentAxis.mapCoords(sectionPlane.worldToLocal(hit.point.clone()), currentState)
-      : (
+    const modelPoint = hit.point.clone();
+    const localNormal = hit.face?.normal
+      ? hit.face.normal.clone().transformDirection(
         isGroundHit
-          ? [
-            { label: "x", value: hit.point.x },
-            { label: "z", value: hit.point.z },
-          ]
-          : mapVolumeCoords(pointInSpecimen, currentState)
-      );
+          ? (hit.object === groundPlane ? groundPlane.matrixWorld : groundStressMesh.matrixWorld)
+          : prismMesh.matrixWorld
+      )
+      : new THREE.Vector3(0, 1, 0);
+    const coords = isGroundHit
+      ? [
+          { label: "x", value: hit.point.x },
+          { label: "y", value: hit.point.y },
+          { label: "z", value: hit.point.z },
+        ]
+      : mapVolumeCoords(pointInSpecimen, currentState);
 
     return {
       clientX: event.clientX,
@@ -1302,9 +1507,10 @@ export function createConcreteStressViewer(
       coords,
       domain: isGroundHit ? "ground" : "specimen",
       modelPoint,
-      sectionAxis: currentState.sectionAxis,
-      sectionOffsetRatio: currentState.sectionOffsetRatio,
+      plane: createSectionPlaneFromHit(modelPoint, localNormal),
+      selectableSection: true,
       localPoint: pointInSpecimen,
+      surfaceNormal: localNormal,
     };
   }
 
@@ -1314,22 +1520,25 @@ export function createConcreteStressViewer(
     pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
     raycaster.setFromCamera(pointer, camera);
-    const hitTargets = currentState.showSection
-      ? [sectionPlane]
-      : groundStressMesh.visible
-        ? [prismMesh, groundStressMesh]
-        : [prismMesh];
+    const hitTargets = [prismMesh];
+
+    if (groundStressMesh.visible) {
+      hitTargets.push(groundStressMesh);
+    } else if (groundPlane.visible) {
+      hitTargets.push(groundPlane);
+    }
+
     const hit = raycaster.intersectObjects(hitTargets, false)[0];
 
     if (!hit) {
-      hoverMarker.visible = false;
+      updatePreviewSection(null);
       onProbeLeave();
       return;
     }
 
-    hoverMarker.visible = true;
-    hoverMarker.position.copy(hit.point);
-    onProbe(toProbePayload(event, hit));
+    const probe = toProbePayload(event, hit);
+    updatePreviewSection(probe);
+    onProbe(probe);
   }
 
   function handlePointerMove(event) {
@@ -1339,18 +1548,45 @@ export function createConcreteStressViewer(
 
   function handlePointerLeave() {
     pointerInside = false;
-    hoverMarker.visible = false;
+    updatePreviewSection(null);
     onProbeLeave();
+  }
+
+  function handlePointerDown(event) {
+    updateHoverFromEvent(event);
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hitTargets = [prismMesh];
+
+    if (groundStressMesh.visible) {
+      hitTargets.push(groundStressMesh);
+    } else if (groundPlane.visible) {
+      hitTargets.push(groundPlane);
+    }
+
+    const hit = raycaster.intersectObjects(hitTargets, false)[0];
+
+    if (!hit) {
+      onProbeSelect(null);
+      return;
+    }
+
+    const probe = toProbePayload(event, hit);
+
+    onProbeSelect(probe);
   }
 
   renderer.domElement.addEventListener("pointermove", handlePointerMove);
   renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
+  renderer.domElement.addEventListener("pointerdown", handlePointerDown);
 
   controls.addEventListener("change", function () {
     clampCameraAboveGround();
 
     if (pointerInside) {
-      hoverMarker.visible = false;
+      updatePreviewSection(null);
       onProbeLeave();
     }
   });
@@ -1383,10 +1619,9 @@ export function createConcreteStressViewer(
     },
     dispose() {
       resizeObserver.disconnect();
+      renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
-      disposeGroupChildren(referenceFigure.group);
-      disposeGroupChildren(referenceHouse.group);
       disposeGroupChildren(environmentGroup);
       disposeGroupChildren(groundVolumeGroup);
       disposeGroupChildren(stressFlowGroup);

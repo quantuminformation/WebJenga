@@ -1,7 +1,7 @@
+#include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
-#include <cmath>
-#include <algorithm>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -56,23 +56,6 @@ double calculate_equivalent_modulus_pa(const ElasticMaterial& material) {
     return material.youngs_modulus_pa / denominator;
 }
 
-double calculate_contact_pressure_multiplier(
-    const ConcretePrism& prism,
-    const CoupledBoundaryState& boundary,
-    double x_m,
-    double z_m) {
-    const double half_width_m = std::max(prism.width_m * 0.5, 1e-6);
-    const double half_depth_m = std::max(prism.depth_m * 0.5, 1e-6);
-    const double x_norm = std::clamp(std::abs(x_m) / half_width_m, 0.0, 1.0);
-    const double z_norm = std::clamp(std::abs(z_m) / half_depth_m, 0.0, 1.0);
-    const double edge_mode = std::pow(x_norm, 4.0) + std::pow(z_norm, 4.0) - 0.4;
-    const double corner_mode = std::pow(x_norm, 2.0) * std::pow(z_norm, 2.0) - (1.0 / 9.0);
-    const double multiplier =
-        1.0 + boundary.contact_shape_factor * (0.82 * edge_mode + 0.28 * corner_mode);
-
-    return std::max(0.35, multiplier);
-}
-
 CoupledBoundaryState calculate_coupled_boundary_state(
     const ConcretePrism& prism,
     const GroundDomain& ground,
@@ -86,40 +69,14 @@ CoupledBoundaryState calculate_coupled_boundary_state(
         0.05,
         25.0
     );
-    const double contact_shape_factor = std::clamp(
-        0.08 + 0.12 * std::log10(1.0 + coupling_ratio),
-        0.04,
-        0.32
-    );
-    const double center_multiplier = calculate_contact_pressure_multiplier(prism, {
-        contact_shape_factor,
-        coupling_ratio,
-        equivalent_ground_modulus_pa,
-        equivalent_specimen_modulus_pa,
-        0.0,
-        0.0,
-    }, 0.0, 0.0);
-    const double edge_multiplier = calculate_contact_pressure_multiplier(
-        prism,
-        {
-            contact_shape_factor,
-            coupling_ratio,
-            equivalent_ground_modulus_pa,
-            equivalent_specimen_modulus_pa,
-            0.0,
-            0.0,
-        },
-        prism.width_m * 0.5,
-        prism.depth_m * 0.5
-    );
 
     return {
-        contact_shape_factor,
+        0.0,
         coupling_ratio,
         equivalent_ground_modulus_pa,
         equivalent_specimen_modulus_pa,
-        average_contact_pressure_pa * std::max(center_multiplier, edge_multiplier),
-        average_contact_pressure_pa * std::min(center_multiplier, edge_multiplier),
+        average_contact_pressure_pa,
+        average_contact_pressure_pa,
     };
 }
 
@@ -160,7 +117,6 @@ bool is_inside_prism(const ConcretePrism& prism, double x_m, double y_m, double 
 double calculate_boussinesq_footing_stress_increment_pa(
     const ConcretePrism& prism,
     const StressReport& report,
-    const CoupledBoundaryState& boundary,
     double depth_below_surface_m,
     double x_m,
     double z_m) {
@@ -177,7 +133,6 @@ double calculate_boussinesq_footing_stress_increment_pa(
         return is_inside_footprint ? report.combined_stress_pa : 0.0;
     }
 
-    const double uniform_pressure_pa = report.combined_stress_pa;
     const int steps_x = std::clamp(
         static_cast<int>(std::ceil(prism.width_m / std::max(prism.width_m / 26.0, depth_below_surface_m * 0.18))),
         14,
@@ -190,6 +145,7 @@ double calculate_boussinesq_footing_stress_increment_pa(
     );
     const double sample_width_m = prism.width_m / static_cast<double>(steps_x);
     const double sample_depth_m = prism.depth_m / static_cast<double>(steps_z);
+    const double uniform_pressure_pa = report.combined_stress_pa;
     double stress_increment_pa = 0.0;
 
     for (int x_index = 0; x_index < steps_x; ++x_index) {
@@ -203,10 +159,7 @@ double calculate_boussinesq_footing_stress_increment_pa(
             const double dz_m = z_m - sample_z_m;
             const double radius_squared_m2 =
                 dx_m * dx_m + dz_m * dz_m + depth_below_surface_m * depth_below_surface_m;
-            const double sample_pressure_pa =
-                uniform_pressure_pa *
-                calculate_contact_pressure_multiplier(prism, boundary, sample_x_m, sample_z_m);
-            const double sample_load_n = sample_pressure_pa * sample_width_m * sample_depth_m;
+            const double sample_load_n = uniform_pressure_pa * sample_width_m * sample_depth_m;
             const double kernel =
                 (3.0 * std::pow(depth_below_surface_m, 3.0)) /
                 (2.0 * pi * std::pow(radius_squared_m2, 2.5));
@@ -230,15 +183,8 @@ double calculate_stress_at_point_pa(
 
     if (is_inside_prism(prism, x_m, y_m, z_m)) {
         const double cover_to_top_m = prism.height_m * 0.5 - y_m;
-        const double normalized_depth = std::clamp(cover_to_top_m / std::max(prism.height_m, 1e-6), 0.0, 1.0);
-        const double base_multiplier =
-            calculate_contact_pressure_multiplier(prism, report.boundary, x_m, z_m);
-        const double coupled_increment_pa =
-            (base_multiplier - 1.0) * report.combined_stress_pa * std::pow(normalized_depth, 1.15);
-
         return report.applied_load_stress_pa +
-               prism.material.density_kg_m3 * gravity_m_s2 * cover_to_top_m +
-               coupled_increment_pa;
+               prism.material.density_kg_m3 * gravity_m_s2 * cover_to_top_m;
     }
 
     if (y_m < ground_top_y_m && y_m >= ground_top_y_m - ground.depth_m) {
@@ -248,7 +194,6 @@ double calculate_stress_at_point_pa(
         const double footing_increment_pa = calculate_boussinesq_footing_stress_increment_pa(
             prism,
             report,
-            report.boundary,
             depth_below_surface_m,
             x_m,
             z_m
@@ -318,15 +263,15 @@ void print_report(const ConcretePrism& prism, const GroundDomain& ground, const 
               << report.self_weight_stress_pa << " = " << report.combined_stress_pa << " Pa\n";
     std::cout << "  sigma_base = " << combined_stress_kpa << " kPa\n";
     std::cout << "  sigma_base = " << combined_stress_mpa << " MPa\n";
-    std::cout << "  The stress therefore varies linearly from " << applied_load_stress_kpa
-              << " kPa at the top to " << combined_stress_kpa << " kPa at the base.\n\n";
+    std::cout << "  Each horizontal slice of the prism is uniform in this model.\n";
+    std::cout << "  The only variation inside the prism is vertical, from self-weight.\n\n";
 
     std::cout << "Base-stress identity for this two-load demo:\n";
     std::cout << "  sigma_base = density x g x height + P / A\n";
     std::cout << "  sigma_base = " << prism.material.density_kg_m3 << " x 9.80665 x " << prism.height_m
               << " + " << report.applied_load_n << " / " << report.area_m2 << " = "
               << report.combined_stress_pa << " Pa\n";
-    std::cout << "\nCoupled boundary note:\n";
+    std::cout << "\nBoundary note:\n";
     std::cout << "  Equivalent specimen modulus = " << report.boundary.equivalent_specimen_modulus_pa / 1'000'000.0 << " MPa\n";
     std::cout << "  Equivalent ground modulus = " << report.boundary.equivalent_ground_modulus_pa / 1'000'000.0 << " MPa\n";
     std::cout << "  Coupling ratio = " << report.boundary.coupling_ratio << "\n";
@@ -337,15 +282,47 @@ void print_report(const ConcretePrism& prism, const GroundDomain& ground, const 
               << report.boundary.max_contact_pressure_pa / 1000.0
               << " kPa\n";
     std::cout << "\nSpatial field note:\n";
-    std::cout << "  The browser viewer now samples sigma(x, y, z).\n";
-    std::cout << "  Inside the prism it blends from a uniform top load to a coupled elastic contact pressure at the base.\n";
-    std::cout << "  In the ground it uses a Boussinesq elastic half-space integration for a rectangular footing,\n";
+    std::cout << "  Inside the prism the stress field is nominal axial stress only.\n";
+    std::cout << "  In the ground it uses a Boussinesq elastic half-space integration for a uniformly loaded rectangular footing,\n";
     std::cout << "  plus geostatic stress from the same density.\n";
 }
 
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE double calculate_combined_stress_pa(
+    double width_m,
+    double depth_m,
+    double height_m,
+    double density_kg_m3,
+    double specimen_youngs_modulus_mpa,
+    double specimen_poisson_ratio,
+    double ground_youngs_modulus_mpa,
+    double ground_poisson_ratio,
+    double applied_load_n) {
+    const ConcretePrism prism{
+        width_m,
+        depth_m,
+        height_m,
+        {
+            density_kg_m3,
+            specimen_youngs_modulus_mpa * 1'000'000.0,
+            specimen_poisson_ratio,
+        },
+    };
+    const GroundDomain ground{
+        std::max(height_m * 1.5, std::max(width_m, depth_m) * 4.0),
+        {
+            density_kg_m3,
+            ground_youngs_modulus_mpa * 1'000'000.0,
+            ground_poisson_ratio,
+        },
+    };
+
+    const StressReport report = calculate_stress_report(prism, ground, applied_load_n);
+    return report.combined_stress_pa;
+}
+
+EMSCRIPTEN_KEEPALIVE double calculate_max_contact_stress_pa(
     double width_m,
     double depth_m,
     double height_m,
@@ -416,7 +393,17 @@ EMSCRIPTEN_KEEPALIVE double calculate_self_weight_stress_pa(
     double depth_m,
     double height_m,
     double density_kg_m3) {
-    return calculate_combined_stress_pa(width_m, depth_m, height_m, density_kg_m3, 30'000.0, 0.2, 120.0, 0.3, 0.0);
+    return calculate_combined_stress_pa(
+        width_m,
+        depth_m,
+        height_m,
+        density_kg_m3,
+        30'000.0,
+        0.2,
+        120.0,
+        0.3,
+        0.0
+    );
 }
 
 EMSCRIPTEN_KEEPALIVE double calculate_stress_at_point_pa_export(
@@ -452,14 +439,7 @@ EMSCRIPTEN_KEEPALIVE double calculate_stress_at_point_pa_export(
         },
     };
 
-    return calculate_stress_at_point_pa(
-        prism,
-        ground,
-        applied_load_n,
-        x_m,
-        y_m,
-        z_m
-    );
+    return calculate_stress_at_point_pa(prism, ground, applied_load_n, x_m, y_m, z_m);
 }
 
 EMSCRIPTEN_KEEPALIVE void print_self_weight_report(
@@ -470,7 +450,7 @@ EMSCRIPTEN_KEEPALIVE void print_self_weight_report(
     print_stress_report(width_m, depth_m, height_m, density_kg_m3, 30'000.0, 0.2, 120.0, 0.3, 0.0);
 }
 
-} // extern "C"
+}  // extern "C"
 
 int main() {
 #ifndef __EMSCRIPTEN__

@@ -19,7 +19,7 @@ mkdir -p "$WASM_OUT_DIR"
 cd "$ROOT_DIR"
 echo "Building WebAssembly output..."
 emcc "$SOLVER_DIR/main.cpp" -O2 \
-  -sEXPORTED_FUNCTIONS='["_main","_calculate_combined_stress_pa","_print_stress_report","_calculate_self_weight_stress_pa","_print_self_weight_report","_calculate_stress_at_point_pa_export"]' \
+  -sEXPORTED_FUNCTIONS='["_main","_calculate_combined_stress_pa","_calculate_max_contact_stress_pa","_print_stress_report","_calculate_self_weight_stress_pa","_print_self_weight_report","_calculate_stress_at_point_pa_export"]' \
   -sEXPORTED_RUNTIME_METHODS='["ccall"]' \
   -o "$WASM_OUT_DIR/main.js"
 echo "Done: $WASM_OUT_DIR/main.js and $WASM_OUT_DIR/main.wasm"

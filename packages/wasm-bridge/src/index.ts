@@ -22,6 +22,7 @@ export interface RuntimeCallMetrics {
   callsPerSecond: number;
   functionCalls: {
     calculateCombinedStressPa: number;
+    calculateMaxContactStressPa: number;
     calculateStressAtPointPa: number;
     printStressReport: number;
   };
@@ -33,6 +34,7 @@ export interface StressState extends StressInputs {
   appliedLoadStressPa: number;
   areaM2: number;
   combinedStressPa: number;
+  maxContactStressPa: number;
   massKg: number;
   selfWeightN: number;
   selfWeightStressPa: number;
@@ -41,6 +43,7 @@ export interface StressState extends StressInputs {
 
 export interface ConcreteStressRuntime {
   calculateCombinedStressPa(inputs: StressInputs): number;
+  calculateMaxContactStressPa(inputs: StressInputs): number;
   calculateStressAtPointPa(inputs: StressInputs, point: StressSamplePoint): number;
   getMetrics(): RuntimeCallMetrics;
   printStressReport(inputs: StressInputs): void;
@@ -112,6 +115,7 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
   const recentCalls: Array<{ count: number; timestampMs: number }> = [];
   const functionCalls = {
     calculateCombinedStressPa: 0,
+    calculateMaxContactStressPa: 0,
     calculateStressAtPointPa: 0,
     printStressReport: 0,
   };
@@ -152,6 +156,28 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
       return callWithMetrics("calculateCombinedStressPa", function () {
         return module.ccall(
           "calculate_combined_stress_pa",
+          "number",
+          ["number", "number", "number", "number", "number", "number", "number", "number", "number"],
+          [
+            params.widthM,
+            params.depthM,
+            params.heightM,
+            params.densityKgM3,
+            params.specimenYoungsModulusMpa,
+            params.specimenPoissonRatio,
+            params.groundYoungsModulusMpa,
+            params.groundPoissonRatio,
+            params.appliedLoadN,
+          ]
+        ) as number;
+      });
+    },
+    calculateMaxContactStressPa(inputs) {
+      const params = toParams(inputs);
+
+      return callWithMetrics("calculateMaxContactStressPa", function () {
+        return module.ccall(
+          "calculate_max_contact_stress_pa",
           "number",
           ["number", "number", "number", "number", "number", "number", "number", "number", "number"],
           [
@@ -247,7 +273,11 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
   };
 }
 
-export function deriveStressState(inputs: StressInputs, combinedStressPa: number): StressState {
+export function deriveStressState(
+  inputs: StressInputs,
+  combinedStressPa: number,
+  maxContactStressPa: number
+): StressState {
   const params = toParams(inputs);
   const areaM2 = params.widthM * params.depthM;
   const volumeM3 = areaM2 * params.heightM;
@@ -259,6 +289,7 @@ export function deriveStressState(inputs: StressInputs, combinedStressPa: number
     appliedLoadStressPa: params.appliedLoadN / areaM2,
     areaM2,
     combinedStressPa,
+    maxContactStressPa,
     massKg,
     selfWeightN,
     selfWeightStressPa: selfWeightN / areaM2,
@@ -271,7 +302,8 @@ export function calculateStressState(
   inputs: StressInputs
 ): StressState {
   const combinedStressPa = runtime.calculateCombinedStressPa(inputs);
-  return deriveStressState(inputs, combinedStressPa);
+  const maxContactStressPa = runtime.calculateMaxContactStressPa(inputs);
+  return deriveStressState(inputs, combinedStressPa, maxContactStressPa);
 }
 
 export async function loadConcreteStressRuntime(

@@ -5,12 +5,12 @@ import {
   type GroundStressField,
   type GroundStressVolumeLayer,
   type ViewerProbe,
+  type ViewerSectionPlane,
 } from "./viewer";
 import {
   calculateStressState,
   loadConcreteStressRuntime,
   type ConcreteStressRuntime,
-  type RuntimeCallMetrics,
   type StressInputs,
   type StressState,
 } from "@webjenga/wasm-bridge";
@@ -18,17 +18,7 @@ import {
 type ThemeMode = "dark" | "light";
 
 interface ViewerEnvironmentState {
-  showFigure: boolean;
   showGround: boolean;
-  showGroundVolume: boolean;
-  showHouse: boolean;
-  showSky: boolean;
-}
-
-interface VerticalSectionState {
-  axis: "xz" | "yz";
-  offsetRatio: number;
-  showPlane: boolean;
 }
 
 interface StressColor {
@@ -51,32 +41,18 @@ interface DisplaySectionState extends StressState {
   sectionLabel: string;
 }
 
-interface VerticalSectionField extends GroundStressField {
-  axis: "xz" | "yz";
-  offsetM: number;
-  horizontalLabel: "x" | "z";
-  yMaxM: number;
-  yMinM: number;
-}
-
-interface StressFlowSelection {
-  axis: "xz" | "yz";
-  horizontalM: number;
-  rowIndex: number;
-  stressPa: number;
-  valueIndex: number;
-  yM: number;
-}
-
-interface VerticalPlotLayout {
-  height: number;
-  insetBottom: number;
-  insetLeft: number;
-  insetRight: number;
-  insetTop: number;
-  plotHeight: number;
-  plotWidth: number;
-  width: number;
+interface PlaneSectionField {
+  colors: number[];
+  columns: number;
+  plane: ViewerSectionPlane;
+  rows: number;
+  uLabel: string;
+  uMaxM: number;
+  uMinM: number;
+  vLabel: string;
+  vMaxM: number;
+  vMinM: number;
+  valuesPa: number[];
 }
 
 document.querySelector("#app").innerHTML = `
@@ -89,12 +65,16 @@ document.querySelector("#app").innerHTML = `
           <div class="viewport-head__copy">
             <p class="eyebrow">C++ in the browser</p>
             <h1>Concrete stress visualiser</h1>
-            <p class="viewport-subline" id="section-dimensions">0.10 x 1.00 x 0.10 m prism</p>
+            <p class="viewport-subline" id="section-dimensions">1.00 x 10.00 x 1.00 m prism</p>
           </div>
           <div class="viewport-head__status">
             <div class="stress-hero">
               <span class="stress-hero__value" id="stress-kpa">0.0</span>
               <span class="stress-hero__unit">kPa</span>
+            </div>
+            <div class="stress-hero__meta">
+              <strong id="stress-hero-label">Base vertical stress</strong>
+              <span id="stress-hero-note">Top vertical stress 0.0 kPa</span>
             </div>
             <div class="viewport-actions">
               <div class="pill" id="ratio-label">Adaptive range</div>
@@ -104,239 +84,119 @@ document.querySelector("#app").innerHTML = `
           </div>
         </header>
 
-        <section class="overlay-card overlay-card--left">
+        <section class="overlay-card hud-card hud-card--inputs">
           <div class="overlay-card__header">
-            <h2>Model inputs</h2>
-            <p>Geometry and coupled elastic model</p>
+            <h2>Geometry and load</h2>
+            <p>Primary inputs for the concrete pillar. Applied top load is fixed at 2.5 kN in this demo.</p>
           </div>
-          <div class="collapse-stack">
-            <details class="collapse-card" open>
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>Geometry and load</strong>
-                  <span>Edit the prism size, density, and applied axial force.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="field-grid">
+          <div class="field-grid">
+            <div class="field">
+              <label for="width">Width (m)</label>
+              <input id="width" type="number" min="0.1" step="0.1" value="1.0" />
+            </div>
+            <div class="field">
+              <label for="depth">Depth (m)</label>
+              <input id="depth" type="number" min="0.1" step="0.1" value="1.0" />
+            </div>
+            <div class="field">
+              <label for="height">Height (m)</label>
+              <input id="height" type="number" min="0.1" step="0.1" value="10.0" />
+            </div>
                   <div class="field">
-                    <label for="width">Width (m)</label>
-                    <input id="width" type="number" min="0.01" step="0.01" value="0.10" />
-                  </div>
-                  <div class="field">
-                    <label for="depth">Depth (m)</label>
-                    <input id="depth" type="number" min="0.01" step="0.01" value="0.10" />
-                  </div>
-                  <div class="field">
-                    <label for="height">Height (m)</label>
-                    <input id="height" type="number" min="0.01" step="0.01" value="1.00" />
-                  </div>
-                  <div class="field">
-                    <label for="density">Density (kg/m^3)</label>
+                    <div class="label-row">
+                      <label for="density">Density (kg/m^3)</label>
+                      <button class="info-button" data-info-key="density" type="button">i</button>
+                    </div>
                     <input id="density" type="number" min="100" step="10" value="2400" />
                   </div>
-                  <div class="field span-2">
-                    <label for="applied-load">Applied top load (N)</label>
-                    <input id="applied-load" type="number" min="0" step="50" value="2500" />
-                  </div>
                 </div>
-              </div>
-            </details>
-            <details class="collapse-card" open>
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>Elastic materials</strong>
-                  <span>Specimen and ground stiffness drive the coupled contact boundary.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="field-grid">
-                  <div class="field">
-                    <label for="specimen-e">Specimen E (MPa)</label>
-                    <input id="specimen-e" type="number" min="100" step="100" value="30000" />
-                  </div>
-                  <div class="field">
-                    <label for="specimen-nu">Specimen nu</label>
-                    <input id="specimen-nu" type="number" min="0.01" max="0.49" step="0.01" value="0.20" />
-                  </div>
-                  <div class="field">
-                    <label for="ground-e">Ground E (MPa)</label>
-                    <input id="ground-e" type="number" min="1" step="10" value="120" />
-                  </div>
-                  <div class="field">
-                    <label for="ground-nu">Ground nu</label>
-                    <input id="ground-nu" type="number" min="0.01" max="0.49" step="0.01" value="0.30" />
-                  </div>
-                </div>
-              </div>
-            </details>
-            <details class="collapse-card">
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>Model summary</strong>
-                  <span>Derived area and volume for the current shape.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="inline-metrics">
-                  <div class="mini-chip">
-                    <strong id="area-summary">0.0100 m^2</strong>
-                    <span>Cross-sectional area</span>
-                  </div>
-                  <div class="mini-chip">
-                    <strong id="volume-summary">0.0100 m^3</strong>
-                    <span>Prism volume</span>
-                  </div>
-                </div>
-              </div>
-            </details>
+        </section>
+
+        <section class="overlay-card hud-card hud-card--assumptions">
+          <div class="overlay-card__header">
+            <h2>Model assumptions</h2>
+            <p>First-order axial pillar stress with elastic spreading in the ground.</p>
+          </div>
+          <div class="inline-metrics assumptions-grid">
+            <div class="mini-chip">
+              <strong>Uniform by slice</strong>
+              <span>Each horizontal pillar slice carries the same vertical stress across its area.</span>
+            </div>
+            <div class="mini-chip">
+              <strong>Ground estimate</strong>
+              <span>The ground view uses elastic half-space stress spread plus geostatic background stress.</span>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <button class="toggle-chip" data-info-key="model-scope" type="button">Model scope</button>
+            <button class="toggle-chip" data-info-key="ground-model" type="button">Ground model</button>
           </div>
         </section>
 
-        <section class="overlay-card overlay-card--right">
+        <section class="overlay-card hud-card hud-card--summary">
           <div class="overlay-card__header">
-            <h2>Viewport controls</h2>
-            <p>Scene settings and live stress readout</p>
+            <h2>Model summary</h2>
+            <p>Derived geometry for the current shape.</p>
           </div>
-          <div class="collapse-stack">
-            <details class="collapse-card" open>
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>Camera</strong>
-                  <span>Orbit, zoom, and hover the model or ground.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="tool-field">
-                  <strong>Drag to orbit, scroll to zoom, hover the specimen or ground to sample stress.</strong>
-                </div>
-              </div>
-            </details>
-            <details class="collapse-card" open>
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>Environment</strong>
-                  <span>Turn the site background elements on or off.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="toggle-row">
-                  <button class="toggle-chip" id="toggle-ground" type="button">Ground</button>
-                  <button class="toggle-chip" id="toggle-sky" type="button">Sky</button>
-                  <button class="toggle-chip" id="toggle-ground-volume" type="button">Subsurface</button>
-                </div>
-              </div>
-            </details>
-            <details class="collapse-card" open>
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>Vertical section</strong>
-                  <span>Inspect a live XZ or YZ slice through the specimen and ground.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="field">
-                  <label for="vertical-section-axis">Section plane</label>
-                  <select id="vertical-section-axis">
-                    <option value="xz">XZ section</option>
-                    <option value="yz">YZ section</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="vertical-section-offset">Section offset</label>
-                  <input id="vertical-section-offset" type="range" min="0" max="1" step="0.01" value="0.50" />
-                  <span class="field-note" id="vertical-section-offset-label">50% through the depth</span>
-                </div>
-                <div class="toggle-row">
-                  <button class="toggle-chip" id="toggle-section-plane" type="button">Show plane</button>
-                </div>
-              </div>
-            </details>
-            <details class="collapse-card" open>
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>References</strong>
-                  <span>Scale cues placed beside the specimen.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="toggle-row">
-                  <button class="toggle-chip" id="toggle-house" type="button">House</button>
-                  <button class="toggle-chip" id="toggle-figure" type="button">Figure</button>
-                </div>
-              </div>
-            </details>
-            <details class="collapse-card">
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>Relative stress scale</strong>
-                  <span>Actual field range, with colours mapped to a concrete reference capacity.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="stress-scale">
-                  <div class="stress-bar">
-                    <div class="stress-bar-marker" id="stress-bar-marker"></div>
-                  </div>
-                  <div class="stress-scale-labels">
-                    <div>
-                      <strong id="stress-range-max">0.0 kPa</strong>
-                      <span>Concrete reference max</span>
-                    </div>
-                    <div>
-                      <strong id="stress-range-mid">0.0 kPa</strong>
-                      <span>Current field max</span>
-                    </div>
-                    <div>
-                      <strong id="stress-range-min">0.0 kPa</strong>
-                      <span>Zero stress</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </details>
-            <details class="collapse-card">
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>Probe readout</strong>
-                  <span>Live hover feedback from the whole-volume field.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="stress-readout">
-                  <strong id="stress-readout-title">3D probe</strong>
-                  <span id="stress-readout-body">Orbit the scene and hover the specimen or ground to inspect surface stress.</span>
-                </div>
-              </div>
-            </details>
-            <details class="collapse-card">
-              <summary>
-                <span class="collapse-card__title">
-                  <strong>WASM runtime</strong>
-                  <span>Live call-rate meter from the WebAssembly bridge.</span>
-                </span>
-              </summary>
-              <div class="collapse-card__body">
-                <div class="inline-metrics runtime-metrics">
-                  <div class="mini-chip">
-                    <strong id="wasm-calls-rate">0.0 calls/s</strong>
-                    <span>Current call rate</span>
-                  </div>
-                  <div class="mini-chip">
-                    <strong id="wasm-total-calls">0</strong>
-                    <span>Total bridge calls</span>
-                  </div>
-                  <div class="mini-chip">
-                    <strong id="wasm-point-calls">0</strong>
-                    <span>Point samples</span>
-                  </div>
-                  <div class="mini-chip">
-                    <strong id="wasm-call-time">0.00 ms</strong>
-                    <span>Average call time</span>
-                  </div>
-                </div>
-              </div>
-            </details>
+          <div class="inline-metrics">
+            <div class="mini-chip">
+              <strong id="area-summary">0.0100 m^2</strong>
+              <span>Cross-sectional area</span>
+            </div>
+            <div class="mini-chip">
+              <strong id="volume-summary">0.0100 m^3</strong>
+              <span>Prism volume</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="overlay-card hud-card hud-card--camera">
+          <div class="overlay-card__header">
+            <h2>Camera</h2>
+            <p>Drag to orbit, scroll to zoom, hover the pillar to inspect stress.</p>
+          </div>
+        </section>
+
+        <section class="overlay-card hud-card hud-card--environment">
+          <div class="overlay-card__header">
+            <h2>Environment</h2>
+            <p>Keep the scene stripped back to the essentials.</p>
+          </div>
+          <div class="toggle-row">
+            <button class="toggle-chip" id="toggle-ground" type="button">Ground</button>
+          </div>
+        </section>
+
+        <section class="overlay-card hud-card hud-card--section">
+          <div class="overlay-card__header">
+            <h2>Section cut</h2>
+            <p>Hover a surface patch, then click to lock a local plane through that exact point.</p>
+          </div>
+          <div class="toggle-row">
+            <button class="toggle-chip" id="toggle-section-plane" type="button" disabled>Show plane</button>
+            <button class="toggle-chip" id="open-section-dialog" type="button" disabled>Cross-section window</button>
+          </div>
+          <span class="field-note" id="selection-hint">Click the pillar or ground to lock a section plane.</span>
+        </section>
+
+        <section class="overlay-card hud-card hud-card--views">
+          <div class="overlay-card__header">
+            <h2>Analysis windows</h2>
+            <p>Open floating tools without blocking the main viewer.</p>
+          </div>
+          <div class="toggle-row">
+            <button class="toggle-chip" id="open-report-dialog" type="button">C++ model report</button>
+          </div>
+        </section>
+
+        <section class="overlay-card hud-card hud-card--probe">
+          <div class="overlay-card__header">
+            <h2>Probe readout</h2>
+            <p>Hover the pillar or ground for local vertical stress.</p>
+          </div>
+          <div class="stress-readout">
+            <strong id="stress-readout-title">3D probe</strong>
+            <span id="stress-readout-body">Orbit the scene and hover the pillar or ground to inspect local vertical stress.</span>
           </div>
         </section>
 
@@ -360,62 +220,104 @@ document.querySelector("#app").innerHTML = `
           <div class="hover-swatch">
             <div class="hover-swatch-indicator" id="hover-swatch-indicator"></div>
           </div>
-          <span id="hover-stress">sigma = 0.0 kPa total</span>
-          <span id="hover-note">Whole-volume surface probe</span>
+          <span id="hover-stress">sigma_v = 0.0 kPa</span>
+          <span id="hover-note">Vertical stress probe</span>
         </div>
 
-        <section class="overlay-card overlay-card--section">
-          <div class="section-callout__header">
-            <div>
-              <p class="eyebrow eyebrow--card">Section overlay</p>
-              <h2>Coupled specimen-ground section</h2>
+        <div class="viewport-float-stack">
+          <div class="floating-scale">
+            <span class="floating-scale__eyebrow">Pillar stress scale</span>
+            <div class="stress-scale stress-scale--floating">
+              <div class="stress-bar">
+                <div class="stress-bar-marker" id="stress-bar-marker"></div>
+              </div>
+              <div class="stress-scale-labels">
+                <div>
+                  <strong id="stress-range-max">0.0 kPa</strong>
+                  <span>Pillar maximum</span>
+                </div>
+                <div>
+                  <strong id="stress-range-min">0.0 kPa</strong>
+                  <span>Zero load reference</span>
+                </div>
+              </div>
             </div>
-            <p id="vertical-plot-summary">XZ section at the depth mid-plane.</p>
           </div>
-          <div class="ground-plot-frame ground-plot-frame--overlay">
-            <canvas id="vertical-plot-canvas" aria-label="Vertical subsurface stress plot"></canvas>
-          </div>
-          <div class="ground-plot-meta ground-plot-meta--overlay">
-            <span id="vertical-plot-range">Section range 0.0 to 0.0 kPa</span>
-            <span id="vertical-plot-position">XZ section at z = 0.050 m</span>
-          </div>
-          <div class="stress-flow-callout">
-            <strong id="stress-flow-title">Stress flow</strong>
-            <span id="stress-flow-body">Click a point in the section overlay to trace compression from the top face into the ground.</span>
-          </div>
-        </section>
+
+          <section class="perf-panel is-collapsed" id="perf-panel">
+            <button class="perf-panel__toggle" id="perf-toggle" type="button" aria-expanded="false">
+              <span class="perf-panel__label">Performance</span>
+              <strong id="wasm-rate-floating">0.0 calcs/s</strong>
+              <span class="perf-panel__chevron" id="perf-toggle-chevron">+</span>
+            </button>
+            <div class="perf-panel__body">
+              <div class="runtime-float__status" id="calc-status">
+                <span class="runtime-float__spinner" aria-hidden="true"></span>
+                <span id="calc-status-text">Idle</span>
+              </div>
+              <div class="perf-panel__meta">
+                <span>WebAssembly calls per second</span>
+                <strong id="perf-peak-rate">0.0 peak</strong>
+              </div>
+              <div class="perf-panel__graph-frame">
+                <canvas id="perf-graph-canvas" aria-label="WebAssembly calls per second graph"></canvas>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
     </section>
-
-    <section class="insights-shell">
-      <details class="insight-card insight-card--plot">
-        <summary>Ground-surface stress plot</summary>
-        <div class="insight-card__body">
-          <div class="insight-card__header">
-            <div>
-              <p class="eyebrow eyebrow--card">Ground surface plot</p>
-              <h2>Ground-surface stress section</h2>
-            </div>
-            <p>Projected x/z surface built from the same sampled field the 3D ground overlay uses.</p>
-          </div>
-          <div class="ground-plot-frame">
-            <canvas id="ground-plot-canvas" aria-label="Ground surface stress plot"></canvas>
-          </div>
-          <div class="ground-plot-meta">
-            <span id="ground-plot-range">Surface range 0.0 to 0.0 kPa</span>
-            <span id="ground-plot-footprint">Loaded footprint 0.10 x 0.10 m</span>
-          </div>
-        </div>
-      </details>
-    </section>
-
-    <section class="report-shell">
-      <details class="report-card">
-        <summary>C++ derivation</summary>
-        <pre id="output">Loading WebAssembly runtime...</pre>
-      </details>
-    </section>
   </main>
+
+  <div class="floating-window is-hidden" id="section-window" data-window-id="section">
+    <section class="floating-window__panel floating-window__panel--section">
+      <header class="floating-window__header" data-window-drag>
+        <div>
+          <p class="eyebrow eyebrow--card">Cross-section</p>
+          <h2>Selected plane</h2>
+        </div>
+        <button class="floating-window__close" data-window-close="section-window" type="button">Close</button>
+      </header>
+      <p class="floating-window__summary" id="vertical-plot-summary">This is the locked internal slice. The green marker follows the same local plane.</p>
+      <div class="ground-plot-frame ground-plot-frame--overlay">
+        <canvas id="vertical-plot-canvas" aria-label="Vertical subsurface stress plot"></canvas>
+      </div>
+      <div class="ground-plot-meta ground-plot-meta--overlay">
+        <span id="vertical-plot-range">Section range 0.0 to 0.0 kPa</span>
+        <span id="vertical-plot-position">No plane selected</span>
+      </div>
+      <div class="stress-flow-callout">
+        <strong id="stress-flow-title">Selected plane</strong>
+        <span id="stress-flow-body">Viewer clicks update this window. The axes below are local to the locked plane.</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="floating-window is-hidden" id="report-window" data-window-id="report">
+    <section class="floating-window__panel floating-window__panel--report">
+      <header class="floating-window__header" data-window-drag>
+        <div>
+          <p class="eyebrow eyebrow--card">C++ model report</p>
+          <h2>Solver report</h2>
+        </div>
+        <button class="floating-window__close" data-window-close="report-window" type="button">Close</button>
+      </header>
+      <pre id="output">Loading WebAssembly runtime...</pre>
+    </section>
+  </div>
+
+  <div class="floating-window is-hidden" id="info-window" data-window-id="info">
+    <section class="floating-window__panel floating-window__panel--info">
+      <header class="floating-window__header" data-window-drag>
+        <div>
+          <p class="eyebrow eyebrow--card">Physics note</p>
+          <h2 id="info-window-title">Parameter meaning</h2>
+        </div>
+        <button class="floating-window__close" data-window-close="info-window" type="button">Close</button>
+      </header>
+      <p class="floating-window__summary" id="info-window-body"></p>
+    </section>
+  </div>
 `;
 
 const output = document.getElementById("output");
@@ -423,12 +325,9 @@ const width = document.getElementById("width") as HTMLInputElement;
 const depth = document.getElementById("depth") as HTMLInputElement;
 const height = document.getElementById("height") as HTMLInputElement;
 const density = document.getElementById("density") as HTMLInputElement;
-const appliedLoad = document.getElementById("applied-load") as HTMLInputElement;
-const specimenE = document.getElementById("specimen-e") as HTMLInputElement;
-const specimenNu = document.getElementById("specimen-nu") as HTMLInputElement;
-const groundE = document.getElementById("ground-e") as HTMLInputElement;
-const groundNu = document.getElementById("ground-nu") as HTMLInputElement;
 const stressKpa = document.getElementById("stress-kpa");
+const stressHeroLabel = document.getElementById("stress-hero-label");
+const stressHeroNote = document.getElementById("stress-hero-note");
 const selfWeightValue = document.getElementById("self-weight-value");
 const appliedLoadValue = document.getElementById("applied-load-value");
 const massValue = document.getElementById("mass-value");
@@ -437,11 +336,6 @@ const volumeSummary = document.getElementById("volume-summary");
 const ratioLabel = document.getElementById("ratio-label");
 const diagramShell = document.getElementById("diagram-shell");
 const sectionDimensions = document.getElementById("section-dimensions");
-const viewportHead = document.querySelector(".viewport-head");
-const leftOverlayCard = document.querySelector(".overlay-card--left");
-const rightOverlayCard = document.querySelector(".overlay-card--right");
-const sectionOverlayCard = document.querySelector(".overlay-card--section");
-const overlayStrip = document.querySelector(".overlay-strip");
 const hoverCard = document.getElementById("hover-card");
 const hoverCoords = document.getElementById("hover-coords");
 const hoverStress = document.getElementById("hover-stress");
@@ -449,7 +343,6 @@ const hoverNote = document.getElementById("hover-note");
 const hoverSwatchIndicator = document.getElementById("hover-swatch-indicator");
 const stressBarMarker = document.getElementById("stress-bar-marker");
 const stressRangeMax = document.getElementById("stress-range-max");
-const stressRangeMid = document.getElementById("stress-range-mid");
 const stressRangeMin = document.getElementById("stress-range-min");
 const stressReadoutTitle = document.getElementById("stress-readout-title");
 const stressReadoutBody = document.getElementById("stress-readout-body");
@@ -458,32 +351,39 @@ const viewportShell = document.getElementById("viewport-shell");
 const viewportFullscreenButton = document.getElementById("viewport-fullscreen");
 const themeToggle = document.getElementById("theme-toggle");
 const toggleGround = document.getElementById("toggle-ground");
-const toggleGroundVolume = document.getElementById("toggle-ground-volume");
-const toggleSky = document.getElementById("toggle-sky");
-const toggleHouse = document.getElementById("toggle-house");
-const toggleFigure = document.getElementById("toggle-figure");
-const verticalSectionAxis = document.getElementById("vertical-section-axis") as HTMLSelectElement;
-const verticalSectionOffset = document.getElementById("vertical-section-offset") as HTMLInputElement;
-const verticalSectionOffsetLabel = document.getElementById("vertical-section-offset-label");
-const toggleSectionPlane = document.getElementById("toggle-section-plane");
+const toggleSectionPlane = document.getElementById("toggle-section-plane") as HTMLButtonElement;
+const selectionHint = document.getElementById("selection-hint");
+const openSectionDialogButton = document.getElementById("open-section-dialog") as HTMLButtonElement;
+const openReportDialogButton = document.getElementById("open-report-dialog") as HTMLButtonElement;
 const wasmCallsRate = document.getElementById("wasm-calls-rate");
 const wasmTotalCalls = document.getElementById("wasm-total-calls");
 const wasmPointCalls = document.getElementById("wasm-point-calls");
 const wasmCallTime = document.getElementById("wasm-call-time");
-const groundPlotCanvas = document.getElementById("ground-plot-canvas") as HTMLCanvasElement;
-const groundPlotRange = document.getElementById("ground-plot-range");
-const groundPlotFootprint = document.getElementById("ground-plot-footprint");
+const wasmRateFloating = document.getElementById("wasm-rate-floating");
+const perfPanel = document.getElementById("perf-panel") as HTMLElement;
+const perfToggle = document.getElementById("perf-toggle") as HTMLButtonElement;
+const perfToggleChevron = document.getElementById("perf-toggle-chevron");
+const perfPeakRate = document.getElementById("perf-peak-rate");
+const perfGraphCanvas = document.getElementById("perf-graph-canvas") as HTMLCanvasElement;
+const calcStatus = document.getElementById("calc-status");
+const calcStatusText = document.getElementById("calc-status-text");
 const verticalPlotCanvas = document.getElementById("vertical-plot-canvas") as HTMLCanvasElement;
 const verticalPlotRange = document.getElementById("vertical-plot-range");
 const verticalPlotPosition = document.getElementById("vertical-plot-position");
 const verticalPlotSummary = document.getElementById("vertical-plot-summary");
 const stressFlowTitle = document.getElementById("stress-flow-title");
 const stressFlowBody = document.getElementById("stress-flow-body");
-const collapsibleCards = Array.from(document.querySelectorAll(".collapse-card"));
+const floatingWindows = Array.from(document.querySelectorAll(".floating-window")) as HTMLDivElement[];
+const sectionWindow = document.getElementById("section-window") as HTMLDivElement;
+const reportWindow = document.getElementById("report-window") as HTMLDivElement;
+const infoWindow = document.getElementById("info-window") as HTMLDivElement;
+const infoWindowTitle = document.getElementById("info-window-title");
+const infoWindowBody = document.getElementById("info-window-body");
 
 const VIEWER_ENV_STORAGE_KEY = "webjenga.viewer.environment";
 const THEME_STORAGE_KEY = "webjenga.theme";
-const VERTICAL_SECTION_STORAGE_KEY = "webjenga.vertical-section";
+const FLOATING_WINDOW_STORAGE_KEY = "webjenga.floating-windows";
+const PERF_PANEL_STORAGE_KEY = "webjenga.perf-panel.collapsed";
 const windowedLayoutQuery = window.matchMedia("(max-width: 980px)");
 
 function resolveInitialTheme(): ThemeMode {
@@ -505,40 +405,16 @@ function loadViewerEnvironment(): ViewerEnvironmentState {
     const raw = window.localStorage.getItem(VIEWER_ENV_STORAGE_KEY);
 
     if (!raw) {
-      return { showFigure: true, showGround: true, showGroundVolume: true, showHouse: true, showSky: true };
+      return { showGround: true };
     }
 
     const parsed = JSON.parse(raw);
 
     return {
-      showFigure: parsed.showFigure !== false,
       showGround: parsed.showGround !== false,
-      showGroundVolume: parsed.showGroundVolume !== false,
-      showHouse: parsed.showHouse !== false,
-      showSky: parsed.showSky !== false,
     };
   } catch (error) {
-    return { showFigure: true, showGround: true, showGroundVolume: true, showHouse: true, showSky: true };
-  }
-}
-
-function loadVerticalSectionState(): VerticalSectionState {
-  try {
-    const raw = window.localStorage.getItem(VERTICAL_SECTION_STORAGE_KEY);
-
-    if (!raw) {
-      return { axis: "xz", offsetRatio: 0.5, showPlane: true };
-    }
-
-    const parsed = JSON.parse(raw);
-
-    return {
-      axis: parsed.axis === "yz" ? "yz" : "xz",
-      offsetRatio: clamp(Number(parsed.offsetRatio) || 0.5, 0, 1),
-      showPlane: parsed.showPlane !== false,
-    };
-  } catch (error) {
-    return { axis: "xz", offsetRatio: 0.5, showPlane: true };
+    return { showGround: true };
   }
 }
 
@@ -550,53 +426,83 @@ function saveViewerEnvironment(environment: ViewerEnvironmentState) {
   }
 }
 
-function saveVerticalSectionState(sectionState: VerticalSectionState) {
+function loadFloatingWindowPositions(): Record<string, { x: number; y: number }> {
   try {
-    window.localStorage.setItem(VERTICAL_SECTION_STORAGE_KEY, JSON.stringify(sectionState));
+    const raw = window.localStorage.getItem(FLOATING_WINDOW_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
   } catch (error) {
-    // Ignore storage failures; the controls still work for the current session.
+    return {};
   }
 }
 
+function loadPerfPanelCollapsed() {
+  try {
+    return window.localStorage.getItem(PERF_PANEL_STORAGE_KEY) !== "false";
+  } catch (error) {
+    return true;
+  }
+}
+
+function savePerfPanelCollapsed(isCollapsed: boolean) {
+  try {
+    window.localStorage.setItem(PERF_PANEL_STORAGE_KEY, String(isCollapsed));
+  } catch (error) {
+    // Ignore storage failures; the toggle still works for the current session.
+  }
+}
+
+function saveFloatingWindowPositions(positions: Record<string, { x: number; y: number }>) {
+  try {
+    window.localStorage.setItem(FLOATING_WINDOW_STORAGE_KEY, JSON.stringify(positions));
+  } catch (error) {
+    // Ignore storage failures; open windows still work for the current session.
+  }
+}
+
+const INFO_CONTENT: Record<string, { body: string; title: string }> = {
+  density: {
+    title: "Density",
+    body: "Density controls the pillar self-weight. Heavier concrete produces more gravitational compression toward the base because each layer must support the material above it.",
+  },
+  "model-scope": {
+    title: "Model scope",
+    body: "The pillar uses a first-order axial stress model. Each horizontal slice is uniform across its area, and stress rises toward the base because lower slices carry the weight of the material above.",
+  },
+  "ground-model": {
+    title: "Ground model",
+    body: "The ground view combines geostatic stress from the ground's own weight with a Boussinesq-style elastic spread of the footing load. This is a useful first-order estimate, not a full FEM soil-contact solve.",
+  },
+};
+
 const viewerEnvironment = loadViewerEnvironment();
+const floatingWindowPositions = loadFloatingWindowPositions();
 let currentTheme: ThemeMode = resolveInitialTheme();
-const verticalSectionState = loadVerticalSectionState();
-const CONCRETE_REFERENCE_MAX_PA = 40_000_000;
 const GROUND_FIELD_COLUMNS = 29;
 const GROUND_FIELD_ROWS = 29;
 const GROUND_VOLUME_COLUMNS = 21;
 const GROUND_VOLUME_ROWS = 21;
 const GROUND_VOLUME_SLICE_COUNT = 7;
 const GROUND_SURFACE_SAMPLE_OFFSET_M = 0.0001;
+const GRAVITY_M_S2 = 9.80665;
+const INPUT_RENDER_DEBOUNCE_MS = 1000;
+const DEFAULT_APPLIED_LOAD_N = 2500;
 let viewportHeightFrame = 0;
+
+let hasLockedSectionSelection = false;
+let showLockedSectionPlane = true;
+let currentLockedSectionPlane: ViewerSectionPlane | null = null;
+let perfPanelCollapsed = loadPerfPanelCollapsed();
 
 const viewer = createConcreteStressViewer({
   container: viewerCanvas,
   onProbe: showHoverProbe,
   onProbeLeave: hideHover,
+  onProbeSelect: handleProbeSelection,
 });
 
 function updateFullscreenButton() {
   viewportFullscreenButton.textContent =
     document.fullscreenElement === viewportShell ? "Exit fullscreen" : "Enter fullscreen";
-}
-
-function getMeasuredOverlayBottom() {
-  const shellRect = viewportShell.getBoundingClientRect();
-  const heightBoundaries = [viewportHead, leftOverlayCard, rightOverlayCard, sectionOverlayCard];
-
-  if (windowedLayoutQuery.matches) {
-    heightBoundaries.push(overlayStrip);
-  }
-
-  return heightBoundaries.reduce(function (maxBottom, element) {
-    if (!element) {
-      return maxBottom;
-    }
-
-    const rect = element.getBoundingClientRect();
-    return Math.max(maxBottom, rect.bottom - shellRect.top);
-  }, 0);
 }
 
 function syncViewportHeight() {
@@ -608,11 +514,13 @@ function syncViewportHeight() {
     return;
   }
 
-  const requiredHeight = Math.max(
-    760,
-    window.innerHeight - 32,
-    Math.ceil(getMeasuredOverlayBottom() + 24)
-  );
+  if (windowedLayoutQuery.matches) {
+    viewportShell.style.removeProperty("height");
+    viewportShell.style.removeProperty("min-height");
+    return;
+  }
+
+  const requiredHeight = Math.max(700, window.innerHeight - 20);
 
   viewportShell.style.height = requiredHeight + "px";
   viewportShell.style.minHeight = requiredHeight + "px";
@@ -624,6 +532,256 @@ function requestViewportHeightSync() {
   }
 
   viewportHeightFrame = window.requestAnimationFrame(syncViewportHeight);
+}
+
+let floatingWindowZ = 12;
+
+function getDefaultWindowPosition(windowId: string) {
+  switch (windowId) {
+    case "section":
+      return { x: Math.max(272, diagramShell.clientWidth - 420), y: 92 };
+    case "report":
+      return { x: 420, y: 88 };
+    case "info":
+      return { x: 280, y: 120 };
+    default:
+      return { x: 32, y: 96 };
+  }
+}
+
+function clampFloatingWindowPosition(windowElement: HTMLDivElement, x: number, y: number) {
+  const margin = 12;
+  const maxX = Math.max(margin, diagramShell.clientWidth - windowElement.offsetWidth - margin);
+  const maxY = Math.max(margin, diagramShell.clientHeight - windowElement.offsetHeight - margin);
+
+  return {
+    x: clamp(x, margin, maxX),
+    y: clamp(y, margin, maxY),
+  };
+}
+
+function saveFloatingWindowPosition(windowElement: HTMLDivElement, x: number, y: number) {
+  const windowId = windowElement.dataset.windowId;
+
+  if (!windowId) {
+    return;
+  }
+
+  floatingWindowPositions[windowId] = { x, y };
+  saveFloatingWindowPositions(floatingWindowPositions);
+}
+
+function applyFloatingWindowPosition(windowElement: HTMLDivElement, x: number, y: number) {
+  const clamped = clampFloatingWindowPosition(windowElement, x, y);
+  const shellRect = diagramShell.getBoundingClientRect();
+  windowElement.style.left = shellRect.left + clamped.x + "px";
+  windowElement.style.top = shellRect.top + clamped.y + "px";
+  windowElement.dataset.localX = String(clamped.x);
+  windowElement.dataset.localY = String(clamped.y);
+  saveFloatingWindowPosition(windowElement, clamped.x, clamped.y);
+}
+
+function bringFloatingWindowToFront(windowElement: HTMLDivElement) {
+  floatingWindowZ += 1;
+  windowElement.style.zIndex = String(floatingWindowZ);
+}
+
+function clampOpenFloatingWindows() {
+  floatingWindows.forEach(function (windowElement) {
+    if (windowElement.classList.contains("is-hidden")) {
+      return;
+    }
+
+    const currentX = Number.parseFloat(windowElement.dataset.localX || "0");
+    const currentY = Number.parseFloat(windowElement.dataset.localY || "0");
+    applyFloatingWindowPosition(windowElement, currentX, currentY);
+  });
+}
+
+function openFloatingWindow(windowElement: HTMLDivElement, onOpen: () => void) {
+  windowElement.classList.remove("is-hidden");
+  bringFloatingWindowToFront(windowElement);
+
+  window.requestAnimationFrame(function () {
+    const windowId = windowElement.dataset.windowId || "";
+    const savedPosition = floatingWindowPositions[windowId] || getDefaultWindowPosition(windowId);
+    applyFloatingWindowPosition(windowElement, savedPosition.x, savedPosition.y);
+    onOpen();
+  });
+}
+
+function closeFloatingWindow(windowElement: HTMLDivElement) {
+  windowElement.classList.add("is-hidden");
+
+  if (windowElement.id === "section-window") {
+    clearSectionCanvasHover();
+    drawVerticalSectionPlot();
+  }
+}
+
+function closeOpenFloatingWindows(options?: { preserveIds?: string[] }) {
+  const preserve = new Set(options?.preserveIds || []);
+
+  floatingWindows.forEach(function (windowElement) {
+    if (preserve.has(windowElement.id) || windowElement.classList.contains("is-hidden")) {
+      return;
+    }
+
+    closeFloatingWindow(windowElement);
+  });
+}
+
+function openInfoWindow(infoKey: string) {
+  const content = INFO_CONTENT[infoKey];
+
+  if (!content) {
+    return;
+  }
+
+  infoWindowTitle.textContent = content.title;
+  infoWindowBody.textContent = content.body;
+  openFloatingWindow(infoWindow, function () {});
+}
+
+function installFloatingWindowDrag(windowElement: HTMLDivElement) {
+  const dragHandle = windowElement.querySelector("[data-window-drag]") as HTMLElement | null;
+
+  if (!dragHandle) {
+    return;
+  }
+
+  dragHandle.addEventListener("pointerdown", function (event: PointerEvent) {
+    const target = event.target as HTMLElement | null;
+
+    if (target?.closest("button")) {
+      return;
+    }
+
+    bringFloatingWindowToFront(windowElement);
+    const originX = Number.parseFloat(windowElement.dataset.localX || "0");
+    const originY = Number.parseFloat(windowElement.dataset.localY || "0");
+    const startX = event.clientX;
+    const startY = event.clientY;
+
+    dragHandle.setPointerCapture(event.pointerId);
+
+    function handleMove(moveEvent: PointerEvent) {
+      applyFloatingWindowPosition(
+        windowElement,
+        originX + moveEvent.clientX - startX,
+        originY + moveEvent.clientY - startY
+      );
+    }
+
+    function handleEnd(endEvent: PointerEvent) {
+      dragHandle.releasePointerCapture(endEvent.pointerId);
+      dragHandle.removeEventListener("pointermove", handleMove);
+      dragHandle.removeEventListener("pointerup", handleEnd);
+      dragHandle.removeEventListener("pointercancel", handleEnd);
+    }
+
+    dragHandle.addEventListener("pointermove", handleMove);
+    dragHandle.addEventListener("pointerup", handleEnd);
+    dragHandle.addEventListener("pointercancel", handleEnd);
+  });
+}
+
+function setCalculatingState(nextIsCalculating: boolean) {
+  isCalculating = nextIsCalculating;
+  calcStatus.classList.toggle("is-calculating", nextIsCalculating);
+  calcStatusText.textContent = nextIsCalculating ? "Calculating..." : "Idle";
+}
+
+function applyPerfPanelState() {
+  perfPanel.classList.toggle("is-collapsed", perfPanelCollapsed);
+  perfToggle.setAttribute("aria-expanded", String(!perfPanelCollapsed));
+  perfToggleChevron.textContent = perfPanelCollapsed ? "+" : "−";
+  savePerfPanelCollapsed(perfPanelCollapsed);
+  drawPerfGraph();
+}
+
+function drawPerfGraph() {
+  const context = perfGraphCanvas.getContext("2d");
+
+  if (!context) {
+    return;
+  }
+
+  const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const widthPx = Math.max(Math.round(perfGraphCanvas.clientWidth * devicePixelRatio), 220);
+  const heightPx = Math.max(Math.round(perfGraphCanvas.clientHeight * devicePixelRatio), 96);
+
+  if (perfGraphCanvas.width !== widthPx || perfGraphCanvas.height !== heightPx) {
+    perfGraphCanvas.width = widthPx;
+    perfGraphCanvas.height = heightPx;
+  }
+
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.scale(devicePixelRatio, devicePixelRatio);
+
+  const width = widthPx / devicePixelRatio;
+  const height = heightPx / devicePixelRatio;
+  const plotBackground = readThemeCssVar("--plot-bg");
+  const plotStroke = readThemeCssVar("--plot-stroke");
+  const plotText = readThemeCssVar("--plot-text");
+  const accent = readThemeCssVar("--accent");
+  const accentSoft = readThemeCssVar("--accent-2");
+  const maxRate = Math.max(1, perfRateHistory.reduce(function (maxValue, value) {
+    return Math.max(maxValue, value);
+  }, 0));
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = plotBackground;
+  context.fillRect(0, 0, width, height);
+
+  context.strokeStyle = plotStroke;
+  context.lineWidth = 1;
+  context.strokeRect(0.5, 0.5, width - 1, height - 1);
+
+  if (perfRateHistory.length < 2) {
+    context.fillStyle = plotText;
+    context.font = "600 12px Avenir Next, Segoe UI, sans-serif";
+    context.fillText("Waiting for runtime samples...", 12, height * 0.56);
+    return;
+  }
+
+  context.strokeStyle = plotStroke;
+  context.setLineDash([4, 4]);
+  for (let index = 1; index <= 3; index += 1) {
+    const y = (height / 4) * index;
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+    context.stroke();
+  }
+  context.setLineDash([]);
+
+  context.beginPath();
+  perfRateHistory.forEach(function (value, index) {
+    const x = (index / Math.max(perfRateHistory.length - 1, 1)) * width;
+    const y = height - (value / maxRate) * (height - 8) - 4;
+
+    if (index === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+  context.strokeStyle = accent;
+  context.lineWidth = 2;
+  context.stroke();
+
+  context.lineTo(width, height - 4);
+  context.lineTo(0, height - 4);
+  context.closePath();
+  context.fillStyle = "color-mix(in srgb, " + accentSoft + " 32%, transparent)";
+  context.fill();
+
+  const latestRate = perfRateHistory[perfRateHistory.length - 1];
+  context.fillStyle = plotText;
+  context.font = "600 11px Avenir Next, Segoe UI, sans-serif";
+  context.fillText(formatFixed(maxRate, 1) + " calcs/s", 8, 14);
+  context.fillText(formatFixed(latestRate, 1) + " now", 8, height - 8);
 }
 
 viewportFullscreenButton.addEventListener("click", async function () {
@@ -648,39 +806,43 @@ document.addEventListener("fullscreenchange", function () {
 let currentSection = {
   appliedLoadN: 0,
   appliedLoadStressPa: 0,
-  areaM2: 0.01,
+  areaM2: 1,
   combinedStressPa: 0,
   densityKgM3: 2400,
-  depthM: 0.1,
+  depthM: 1,
   fieldRangeMaxPa: 500000,
   fieldRangeMinPa: 0,
   groundPoissonRatio: 0.3,
   groundYoungsModulusMpa: 120,
-  groundDepthM: 1.5,
-  heightM: 1,
-  massKg: 24,
+  groundDepthM: 15,
+  heightM: 10,
+  massKg: 24000,
+  maxContactStressPa: 0,
   rangeMaxPa: 500000,
   rangeMinPa: 0,
-  sectionLabel: "Whole volume",
+  sectionLabel: "Concrete pillar",
   selfWeightN: 0,
   selfWeightStressPa: 0,
   specimenPoissonRatio: 0.2,
   specimenYoungsModulusMpa: 30000,
-  volumeM3: 0.01,
-  widthM: 0.1,
+  volumeM3: 10,
+  widthM: 1,
 } as DisplaySectionState;
 let groundFieldCacheKey = "";
 let groundFieldCache: GroundStressField | null = null;
 let groundVolumeCacheKey = "";
 let groundVolumeCache: GroundStressVolumeLayer[] | null = null;
-let verticalSectionCacheKey = "";
-let verticalSectionCache: VerticalSectionField | null = null;
-let currentGroundSurfaceField: GroundStressField | null = null;
-let currentVerticalSectionField: VerticalSectionField | null = null;
-let currentStressFlowSelection: StressFlowSelection | null = null;
-let currentVerticalPlotLayout: VerticalPlotLayout | null = null;
-let currentRuntimeMetrics: RuntimeCallMetrics | null = null;
+let planeSectionCacheKey = "";
+let planeSectionCache: PlaneSectionField | null = null;
+let currentPlaneSectionField: PlaneSectionField | null = null;
+let currentProbeSectionMarker: { uM: number; vM: number } | null = null;
+let currentCanvasSectionMarker: { uM: number; vM: number } | null = null;
+let currentCanvasSectionPoint: { x: number; y: number; z: number } | null = null;
 let runtimeMetricsTimer = 0;
+const perfRateHistory: number[] = [];
+let pendingRenderTimer = 0;
+let renderQueuedWhileBusy = false;
+let isCalculating = false;
 
 function formatFixed(value, digits) {
   return Number(value).toLocaleString("en-GB", {
@@ -695,13 +857,96 @@ function formatRounded(value) {
   });
 }
 
+function formatStepValue(value: number, digits = 1) {
+  return Number(value).toLocaleString("en-GB", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+    useGrouping: false,
+  });
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function getPlanePointAt(plane: ViewerSectionPlane, uM: number, vM: number) {
+  return {
+    x: plane.origin.x + plane.uAxis.x * uM + plane.vAxis.x * vM,
+    y: plane.origin.y + plane.uAxis.y * uM + plane.vAxis.y * vM,
+    z: plane.origin.z + plane.uAxis.z * uM + plane.vAxis.z * vM,
+  };
+}
+
+function projectPointToPlaneLocal(plane: ViewerSectionPlane, point: { x: number; y: number; z: number }) {
+  const relative = {
+    x: point.x - plane.origin.x,
+    y: point.y - plane.origin.y,
+    z: point.z - plane.origin.z,
+  };
+
+  return {
+    distanceM:
+      relative.x * plane.normal.x + relative.y * plane.normal.y + relative.z * plane.normal.z,
+    uM: relative.x * plane.uAxis.x + relative.y * plane.uAxis.y + relative.z * plane.uAxis.z,
+    vM: relative.x * plane.vAxis.x + relative.y * plane.vAxis.y + relative.z * plane.vAxis.z,
+  };
+}
+
+function getDisplayedSectionMarker() {
+  return currentCanvasSectionMarker || currentProbeSectionMarker;
+}
+
+function syncSectionPlaneHighlight() {
+  viewer.update({
+    highlightedSectionPoint: currentCanvasSectionPoint,
+  });
+}
+
+function clearSectionCanvasHover() {
+  currentCanvasSectionMarker = null;
+  currentCanvasSectionPoint = null;
+  syncSectionPlaneHighlight();
+}
+
+function updateSectionMarkerFromProbe(probe: ViewerProbe | null) {
+  if (!currentLockedSectionPlane || !probe) {
+    currentProbeSectionMarker = null;
+    drawVerticalSectionPlot();
+    return;
+  }
+
+  const localPoint = projectPointToPlaneLocal(currentLockedSectionPlane, probe.modelPoint);
+  const planeToleranceM = Math.max(
+    0.01,
+    Math.min(currentSection.widthM, currentSection.depthM, currentSection.heightM) * 0.025
+  );
+  const insidePlane =
+    Math.abs(localPoint.distanceM) <= planeToleranceM &&
+    localPoint.uM >= currentLockedSectionPlane.uMinM &&
+    localPoint.uM <= currentLockedSectionPlane.uMaxM &&
+    localPoint.vM >= currentLockedSectionPlane.vMinM &&
+    localPoint.vM <= currentLockedSectionPlane.vMaxM;
+
+  currentProbeSectionMarker = insidePlane
+    ? {
+        uM: localPoint.uM,
+        vM: localPoint.vM,
+      }
+    : null;
+  drawVerticalSectionPlot();
 }
 
 function setToggleState(button, isActive) {
   button.classList.toggle("is-active", isActive);
   button.setAttribute("aria-pressed", String(isActive));
+}
+
+function updateSectionActionState() {
+  toggleSectionPlane.disabled = !hasLockedSectionSelection;
+  openSectionDialogButton.disabled = !hasLockedSectionSelection;
+  selectionHint.textContent = hasLockedSectionSelection
+    ? "Plane locked. Open the cross-section window or show the plane in the viewer."
+    : "Click the pillar or ground to lock a section plane.";
 }
 
 function updateThemeButton() {
@@ -719,42 +964,45 @@ function applyTheme() {
   viewer.update({
     theme: currentTheme,
   });
-  drawGroundSurfacePlot();
   drawVerticalSectionPlot();
+  drawPerfGraph();
 }
 
 function syncViewerEnvironmentControls() {
-  setToggleState(toggleFigure, viewerEnvironment.showFigure);
   setToggleState(toggleGround, viewerEnvironment.showGround);
-  setToggleState(toggleGroundVolume, viewerEnvironment.showGroundVolume);
-  setToggleState(toggleHouse, viewerEnvironment.showHouse);
-  setToggleState(toggleSectionPlane, verticalSectionState.showPlane);
-  setToggleState(toggleSky, viewerEnvironment.showSky);
-  verticalSectionAxis.value = verticalSectionState.axis;
-  verticalSectionOffset.value = String(verticalSectionState.offsetRatio);
-  const offsetPercent = Math.round(verticalSectionState.offsetRatio * 100);
-  verticalSectionOffsetLabel.textContent =
-    verticalSectionState.axis === "xz"
-      ? offsetPercent + "% through the depth"
-      : offsetPercent + "% through the width";
+  setToggleState(toggleSectionPlane, showLockedSectionPlane);
 }
 
 function applyViewerEnvironment() {
   syncViewerEnvironmentControls();
+  updateSectionActionState();
   saveViewerEnvironment(viewerEnvironment);
-  saveVerticalSectionState(verticalSectionState);
   viewer.update({
-    sectionAxis: verticalSectionState.axis,
-    sectionOffsetRatio: verticalSectionState.offsetRatio,
-    showReferenceFigure: viewerEnvironment.showFigure,
+    selectedSectionPlane: currentLockedSectionPlane,
+    showReferenceFigure: false,
     showGround: viewerEnvironment.showGround,
-    showGroundVolume: viewerEnvironment.showGroundVolume,
-    showReferenceHouse: viewerEnvironment.showHouse,
-    showSection: verticalSectionState.showPlane,
-    showSky: viewerEnvironment.showSky,
+    showGroundVolume: viewerEnvironment.showGround,
+    showReferenceHouse: false,
+    showSection: hasLockedSectionSelection && showLockedSectionPlane,
+    showSky: false,
     theme: currentTheme,
   });
   requestViewportHeightSync();
+}
+
+function handleProbeSelection(probe: ViewerProbe | null) {
+  currentLockedSectionPlane = probe?.selectableSection ? probe.plane : null;
+  hasLockedSectionSelection = Boolean(currentLockedSectionPlane);
+  currentProbeSectionMarker = null;
+  clearSectionCanvasHover();
+
+  if (hasLockedSectionSelection) {
+    showLockedSectionPlane = true;
+  }
+
+  syncViewerEnvironmentControls();
+  updateSectionActionState();
+  scheduleImmediateRender();
 }
 
 function mixChannel(from, to, amount) {
@@ -773,9 +1021,9 @@ function colorToString(color: StressColor) {
   return "rgb(" + color.r + ", " + color.g + ", " + color.b + ")";
 }
 
-function getFieldStressBounds(stressState: StressState): StressBounds {
+function getStressScaleBounds(stressState: StressState): StressBounds {
   const min = Math.max(0, stressState.appliedLoadStressPa);
-  const max = Math.max(min, stressState.combinedStressPa);
+  const max = Math.max(min, stressState.combinedStressPa, stressState.maxContactStressPa);
 
   return {
     max: Math.max(max, min + 1),
@@ -805,28 +1053,15 @@ function getStressRatio(stressPa, minPa, maxPa) {
 }
 
 function getStressColor(ratio) {
-  const stops = [
-    { at: 0.0, color: { b: 232, g: 168, r: 84 } },
-    { at: 0.18, color: { b: 201, g: 212, r: 76 } },
-    { at: 0.55, color: { b: 79, g: 188, r: 244 } },
-    { at: 1.0, color: { b: 53, g: 57, r: 229 } },
-  ];
-
-  for (let index = 0; index < stops.length - 1; index += 1) {
-    const start = stops[index];
-    const end = stops[index + 1];
-
-    if (ratio <= end.at) {
-      const localAmount = clamp((ratio - start.at) / (end.at - start.at), 0, 1);
-      return mixColor(start.color, end.color, localAmount);
-    }
-  }
-
-  return stops[stops.length - 1].color;
+  return mixColor(
+    { b: 255, g: 0, r: 0 },
+    { b: 0, g: 0, r: 255 },
+    clamp(ratio, 0, 1)
+  );
 }
 
 function getMaterialStressScaleMaxPa(fieldMaxPa: number) {
-  return Math.max(CONCRETE_REFERENCE_MAX_PA, fieldMaxPa);
+  return Math.max(fieldMaxPa, 1);
 }
 
 function formatForce(value) {
@@ -838,23 +1073,28 @@ function formatForce(value) {
 }
 
 function getStressAtLocalYPa(localY, stressState) {
-  const normalized = clamp(
-    (localY + stressState.heightM / 2) / Math.max(stressState.heightM, 1e-6),
-    0,
-    1
-  );
-
-  return (
-    stressState.combinedStressPa +
-    (stressState.appliedLoadStressPa - stressState.combinedStressPa) * normalized
-  );
+  const coverToTopM = clamp(stressState.heightM / 2 - localY, 0, stressState.heightM);
+  return stressState.appliedLoadStressPa + stressState.densityKgM3 * GRAVITY_M_S2 * coverToTopM;
 }
 
 function getSelfWeightStressAtLocalYPa(localY, stressState) {
-  return Math.max(0, getStressAtLocalYPa(localY, stressState) - stressState.appliedLoadStressPa);
+  const coverToTopM = clamp(stressState.heightM / 2 - localY, 0, stressState.heightM);
+  return stressState.densityKgM3 * GRAVITY_M_S2 * coverToTopM;
 }
 
-function getVolumeStressState(bounds: StressBounds): {
+function getTransferredGroundStressPa(stressState: StressState, yM: number, totalStressPa: number) {
+  const groundSurfaceY = -stressState.heightM / 2;
+
+  if (yM >= groundSurfaceY) {
+    return totalStressPa;
+  }
+
+  const depthBelowSurfaceM = groundSurfaceY - yM;
+  const geostaticStressPa = stressState.densityKgM3 * GRAVITY_M_S2 * depthBelowSurfaceM;
+  return Math.max(0, totalStressPa - geostaticStressPa);
+}
+
+function getVolumeStressState(stressState: StressState): {
   representativeStressPa: number;
   sectionBottomColorCss: string;
   sectionGradientMode: "uniform" | "vertical";
@@ -863,10 +1103,12 @@ function getVolumeStressState(bounds: StressBounds): {
   volumeBottomColorCss: string;
   volumeTopColorCss: string;
 } {
-  const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
-  const topRatio = getStressRatio(bounds.min, 0, materialScaleMaxPa);
-  const bottomRatio = getStressRatio(bounds.max, 0, materialScaleMaxPa);
-  const representativeStressPa = bounds.min + (bounds.max - bounds.min) / 2;
+  const materialScaleMaxPa = getMaterialStressScaleMaxPa(stressState.maxContactStressPa);
+  const topRatio = getStressRatio(stressState.appliedLoadStressPa, 0, materialScaleMaxPa);
+  const bottomRatio = getStressRatio(stressState.maxContactStressPa, 0, materialScaleMaxPa);
+  const representativeStressPa =
+    stressState.appliedLoadStressPa +
+    (stressState.maxContactStressPa - stressState.appliedLoadStressPa) / 2;
   const representativeRatio = getStressRatio(representativeStressPa, 0, materialScaleMaxPa);
   const topColor = getStressColor(topRatio);
   const bottomColor = getStressColor(bottomRatio);
@@ -884,7 +1126,7 @@ function getVolumeStressState(bounds: StressBounds): {
 
 function createGroundFieldCacheKey(
   stressState: StressState,
-  bounds: StressBounds,
+  materialScaleMaxPa: number,
   groundDepthM: number,
   sampleY: number,
   columns: number,
@@ -901,8 +1143,7 @@ function createGroundFieldCacheKey(
     formatFixed(stressState.groundPoissonRatio, 3),
     formatFixed(stressState.appliedLoadN, 1),
     formatFixed(groundDepthM, 4),
-    formatFixed(bounds.min, 2),
-    formatFixed(bounds.max, 2),
+    formatFixed(materialScaleMaxPa, 2),
     formatFixed(sampleY, 5),
     String(columns),
     String(rows),
@@ -918,153 +1159,10 @@ function createGroundPlotColorString(colors: number[], valueIndex: number) {
   return "rgb(" + r + ", " + g + ", " + b + ")";
 }
 
-function drawGroundSurfacePlot() {
-  const context = groundPlotCanvas.getContext("2d");
-  const field = currentGroundSurfaceField;
-
-  if (!context || !field) {
-    return;
-  }
-
-  const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-  const widthPx = Math.max(Math.round(groundPlotCanvas.clientWidth * devicePixelRatio), 320);
-  const heightPx = Math.max(Math.round(groundPlotCanvas.clientHeight * devicePixelRatio), 220);
-
-  if (groundPlotCanvas.width !== widthPx || groundPlotCanvas.height !== heightPx) {
-    groundPlotCanvas.width = widthPx;
-    groundPlotCanvas.height = heightPx;
-  }
-
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  context.scale(devicePixelRatio, devicePixelRatio);
-
-  const width = widthPx / devicePixelRatio;
-  const height = heightPx / devicePixelRatio;
-  const maxValuePa = field.valuesPa.reduce(function (maxValue, value) {
-    return Math.max(maxValue, value);
-  }, 0);
-  const minValuePa = field.valuesPa.reduce(function (minValue, value) {
-    return Math.min(minValue, value);
-  }, Number.POSITIVE_INFINITY);
-  const valueSpanPa = Math.max(maxValuePa - minValuePa, 1);
-  const scale = Math.min(width * 0.24, height * 0.27);
-  const centerX = width * 0.5;
-  const baseY = height * 0.84;
-  const isoTilt = 0.34;
-  const elevationScale = height * 0.28;
-  const plotBackground = readThemeCssVar("--plot-bg");
-  const plotStroke = readThemeCssVar("--plot-stroke");
-  const plotText = readThemeCssVar("--plot-text");
-  const plotFootprint = readThemeCssVar("--plot-footprint");
-
-  function projectPoint(columnIndex: number, rowIndex: number, valuePa: number) {
-    const xRatio = columnIndex / Math.max(field.columns - 1, 1);
-    const zRatio = rowIndex / Math.max(field.rows - 1, 1);
-    const centeredX = xRatio - 0.5;
-    const centeredZ = zRatio - 0.5;
-    const normalizedValue = (valuePa - minValuePa) / valueSpanPa;
-
-    return {
-      x: centerX + (centeredX - centeredZ) * scale,
-      y: baseY + (centeredX + centeredZ) * scale * isoTilt - normalizedValue * elevationScale,
-    };
-  }
-
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = plotBackground;
-  context.fillRect(0, 0, width, height);
-
-  const cells: Array<{
-    color: string;
-    depthKey: number;
-    points: Array<{ x: number; y: number }>;
-  }> = [];
-
-  for (let rowIndex = 0; rowIndex < field.rows - 1; rowIndex += 1) {
-    for (let columnIndex = 0; columnIndex < field.columns - 1; columnIndex += 1) {
-      const topLeftIndex = rowIndex * field.columns + columnIndex;
-      const topRightIndex = topLeftIndex + 1;
-      const bottomLeftIndex = topLeftIndex + field.columns;
-      const bottomRightIndex = bottomLeftIndex + 1;
-      const averageValuePa =
-        (field.valuesPa[topLeftIndex] +
-          field.valuesPa[topRightIndex] +
-          field.valuesPa[bottomLeftIndex] +
-          field.valuesPa[bottomRightIndex]) /
-        4;
-
-      cells.push({
-        color: createGroundPlotColorString(field.colors, topLeftIndex),
-        depthKey: rowIndex + columnIndex,
-        points: [
-          projectPoint(columnIndex, rowIndex, field.valuesPa[topLeftIndex]),
-          projectPoint(columnIndex + 1, rowIndex, field.valuesPa[topRightIndex]),
-          projectPoint(columnIndex + 1, rowIndex + 1, field.valuesPa[bottomRightIndex]),
-          projectPoint(columnIndex, rowIndex + 1, field.valuesPa[bottomLeftIndex]),
-        ].map(function (point) {
-          return {
-            x: point.x,
-            y: point.y - ((averageValuePa - minValuePa) / valueSpanPa) * height * 0.002,
-          };
-        }),
-      });
-    }
-  }
-
-  cells
-    .sort(function (leftCell, rightCell) {
-      return leftCell.depthKey - rightCell.depthKey;
-    })
-    .forEach(function (cell) {
-      context.beginPath();
-      context.moveTo(cell.points[0].x, cell.points[0].y);
-      cell.points.slice(1).forEach(function (point) {
-        context.lineTo(point.x, point.y);
-      });
-      context.closePath();
-      context.fillStyle = cell.color;
-      context.strokeStyle = plotStroke;
-      context.lineWidth = 1;
-      context.fill();
-      context.stroke();
-    });
-
-  const footprintXRatio = currentSection.widthM / Math.max(field.widthM, 1e-6);
-  const footprintZRatio = currentSection.depthM / Math.max(field.depthM, 1e-6);
-  const footprintColumns = footprintXRatio * (field.columns - 1);
-  const footprintRows = footprintZRatio * (field.rows - 1);
-  const footprintLeft = (field.columns - 1 - footprintColumns) / 2;
-  const footprintTop = (field.rows - 1 - footprintRows) / 2;
-  const footprintPoints = [
-    projectPoint(footprintLeft, footprintTop, minValuePa),
-    projectPoint(footprintLeft + footprintColumns, footprintTop, minValuePa),
-    projectPoint(footprintLeft + footprintColumns, footprintTop + footprintRows, minValuePa),
-    projectPoint(footprintLeft, footprintTop + footprintRows, minValuePa),
-  ];
-
-  context.beginPath();
-  context.moveTo(footprintPoints[0].x, footprintPoints[0].y);
-  footprintPoints.slice(1).forEach(function (point) {
-    context.lineTo(point.x, point.y);
-  });
-  context.closePath();
-  context.strokeStyle = plotFootprint;
-  context.setLineDash([6, 5]);
-  context.lineWidth = 1.5;
-  context.stroke();
-  context.setLineDash([]);
-
-  context.fillStyle = plotText;
-  context.font = "600 12px Avenir Next, Segoe UI, sans-serif";
-  context.fillText("pressure", width - 74, 22);
-  context.fillText("x", width * 0.72, height - 20);
-  context.fillText("z", width * 0.18, height - 20);
-}
-
 function buildGroundStressField(
   runtimeApi: ConcreteStressRuntime,
   stressState: StressState,
-  bounds: StressBounds,
+  materialScaleMaxPa: number,
   groundDepthM: number,
   sampleY: number,
   columns: number,
@@ -1073,7 +1171,6 @@ function buildGroundStressField(
   const extent = getGroundFieldExtent(stressState);
   const colors = [];
   const valuesPa = [];
-  const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
 
   for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
     const zRatio = rowIndex / Math.max(rows - 1, 1);
@@ -1088,11 +1185,12 @@ function buildGroundStressField(
         y: sampleY,
         z,
       });
-      const ratio = getStressRatio(stressPa, 0, materialScaleMaxPa);
+      const displayStressPa = getTransferredGroundStressPa(stressState, sampleY, stressPa);
+      const ratio = getStressRatio(displayStressPa, 0, materialScaleMaxPa);
       const color = getStressColor(ratio);
 
       colors.push(color.r / 255, color.g / 255, color.b / 255);
-      valuesPa.push(stressPa);
+      valuesPa.push(displayStressPa);
     }
   }
 
@@ -1106,196 +1204,136 @@ function buildGroundStressField(
   };
 }
 
-function buildVerticalSectionField(
-  runtimeApi: ConcreteStressRuntime,
+function createPlaneSectionCacheKey(
   stressState: StressState,
-  bounds: StressBounds,
+  plane: ViewerSectionPlane,
+  materialScaleMaxPa: number,
   groundDepthM: number,
-  sectionState: VerticalSectionState,
   columns: number,
   rows: number
-): VerticalSectionField {
-  const extent = getGroundFieldExtent(stressState);
-  const horizontalLabel = sectionState.axis === "xz" ? "x" : "z";
-  const spanM = sectionState.axis === "xz" ? extent.widthM : extent.depthM;
-  const perpendicularSpanM = sectionState.axis === "xz" ? stressState.depthM : stressState.widthM;
-  const offsetM = -perpendicularSpanM / 2 + sectionState.offsetRatio * perpendicularSpanM;
+) {
+  return [
+    createGroundFieldCacheKey(stressState, materialScaleMaxPa, groundDepthM, plane.origin.y, columns, rows),
+    plane.title,
+    plane.uLabel,
+    plane.vLabel,
+    formatFixed(plane.origin.x, 4),
+    formatFixed(plane.origin.y, 4),
+    formatFixed(plane.origin.z, 4),
+    formatFixed(plane.normal.x, 4),
+    formatFixed(plane.normal.y, 4),
+    formatFixed(plane.normal.z, 4),
+    formatFixed(plane.uAxis.x, 4),
+    formatFixed(plane.uAxis.y, 4),
+    formatFixed(plane.uAxis.z, 4),
+    formatFixed(plane.vAxis.x, 4),
+    formatFixed(plane.vAxis.y, 4),
+    formatFixed(plane.vAxis.z, 4),
+    formatFixed(plane.uMinM, 4),
+    formatFixed(plane.uMaxM, 4),
+    formatFixed(plane.vMinM, 4),
+    formatFixed(plane.vMaxM, 4),
+  ].join("|");
+}
+
+function buildPlaneSectionField(
+  runtimeApi: ConcreteStressRuntime,
+  stressState: StressState,
+  plane: ViewerSectionPlane,
+  materialScaleMaxPa: number,
+  groundDepthM: number,
+  columns: number,
+  rows: number
+): PlaneSectionField {
   const valuesPa = [];
   const colors = [];
-  const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
-  const yMaxM = stressState.heightM / 2;
-  const yMinM = -groundDepthM - stressState.heightM / 2;
+  const origin = plane.origin;
+  const uAxis = plane.uAxis;
+  const vAxis = plane.vAxis;
 
   for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
-    const yRatio = rowIndex / Math.max(rows - 1, 1);
-    const y = yMaxM - yRatio * (yMaxM - yMinM);
+    const vRatio = rowIndex / Math.max(rows - 1, 1);
+    const v = plane.vMaxM - vRatio * (plane.vMaxM - plane.vMinM);
 
     for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
-      const horizontalRatio = columnIndex / Math.max(columns - 1, 1);
-      const horizontal = -spanM / 2 + horizontalRatio * spanM;
-      const point =
-        sectionState.axis === "xz"
-          ? { x: horizontal, y, z: offsetM }
-          : { x: offsetM, y, z: horizontal };
+      const uRatio = columnIndex / Math.max(columns - 1, 1);
+      const u = plane.uMinM + uRatio * (plane.uMaxM - plane.uMinM);
+      const point = {
+        x: origin.x + uAxis.x * u + vAxis.x * v,
+        y: origin.y + uAxis.y * u + vAxis.y * v,
+        z: origin.z + uAxis.z * u + vAxis.z * v,
+      };
       const stressPa = runtimeApi.calculateStressAtPointPa(stressState, {
         groundDepthM,
         ...point,
       });
-      const ratio = getStressRatio(stressPa, 0, materialScaleMaxPa);
+      const displayStressPa =
+        point.y < -stressState.heightM / 2 ? getTransferredGroundStressPa(stressState, point.y, stressPa) : stressPa;
+      const ratio = getStressRatio(displayStressPa, 0, materialScaleMaxPa);
       const color = getStressColor(ratio);
 
       colors.push(color.r / 255, color.g / 255, color.b / 255);
-      valuesPa.push(stressPa);
+      valuesPa.push(displayStressPa);
     }
   }
 
   return {
-    axis: sectionState.axis,
     colors,
     columns,
-    depthM: stressState.depthM,
-    horizontalLabel,
-    offsetM,
+    plane,
     rows,
+    uLabel: plane.uLabel,
+    uMaxM: plane.uMaxM,
+    uMinM: plane.uMinM,
+    vLabel: plane.vLabel,
+    vMaxM: plane.vMaxM,
+    vMinM: plane.vMinM,
     valuesPa,
-    widthM: spanM,
-    yMaxM,
-    yMinM,
   };
 }
 
-function getVerticalSectionField(
+function getPlaneSectionField(
   runtimeApi: ConcreteStressRuntime,
   stressState: StressState,
-  bounds: StressBounds,
-  groundDepthM: number,
-  sectionState: VerticalSectionState
+  plane: ViewerSectionPlane | null,
+  materialScaleMaxPa: number,
+  groundDepthM: number
 ) {
-  const cacheKey = [
-    createGroundFieldCacheKey(
-      stressState,
-      bounds,
-      groundDepthM,
-      sectionState.offsetRatio,
-      37,
-      49
-    ),
-    sectionState.axis,
-    String(sectionState.offsetRatio),
-  ].join("|");
-
-  if (cacheKey === verticalSectionCacheKey && verticalSectionCache) {
-    return verticalSectionCache;
+  if (!plane) {
+    return null;
   }
 
-  verticalSectionCacheKey = cacheKey;
-  verticalSectionCache = buildVerticalSectionField(
+  const cacheKey = createPlaneSectionCacheKey(
+    stressState,
+    plane,
+    materialScaleMaxPa,
+    groundDepthM,
+    43,
+    55
+  );
+
+  if (cacheKey === planeSectionCacheKey && planeSectionCache) {
+    return planeSectionCache;
+  }
+
+  planeSectionCacheKey = cacheKey;
+  planeSectionCache = buildPlaneSectionField(
     runtimeApi,
     stressState,
-    bounds,
+    plane,
+    materialScaleMaxPa,
     groundDepthM,
-    sectionState,
-    37,
-    49
+    43,
+    55
   );
-  return verticalSectionCache;
-}
-
-function projectVerticalPlotPoint(
-  field: VerticalSectionField,
-  layout: VerticalPlotLayout,
-  horizontalM: number,
-  yM: number
-) {
-  return {
-    x:
-      layout.insetLeft +
-      ((horizontalM + field.widthM / 2) / Math.max(field.widthM, 1e-6)) * layout.plotWidth,
-    y:
-      layout.insetTop +
-      ((field.yMaxM - yM) / Math.max(field.yMaxM - field.yMinM, 1e-6)) * layout.plotHeight,
-  };
-}
-
-function syncStressFlowSelection() {
-  const field = currentVerticalSectionField;
-
-  if (!runtime || !field || !currentStressFlowSelection || currentStressFlowSelection.axis !== field.axis) {
-    currentStressFlowSelection = null;
-    stressFlowTitle.textContent = "Stress flow";
-    stressFlowBody.textContent =
-      "Click a point in the section overlay to trace compression from the top face into the ground.";
-    viewer.update({
-      stressFlowPath: null,
-    });
-    return;
-  }
-
-  const horizontalLabel = field.horizontalLabel;
-  const offsetLabel =
-    field.axis === "xz"
-      ? "z = " + formatFixed(field.offsetM + currentSection.depthM / 2, 3) + " m"
-      : "x = " + formatFixed(field.offsetM + currentSection.widthM / 2, 3) + " m";
-  const pointCoordinate =
-    horizontalLabel + " = " + formatFixed(currentStressFlowSelection.horizontalM + field.widthM / 2, 3) + " m";
-  const pointStressKpa = currentStressFlowSelection.stressPa / 1000;
-  const pointCoordinates =
-    field.axis === "xz"
-      ? {
-          x: currentStressFlowSelection.horizontalM,
-          z: field.offsetM,
-        }
-      : {
-          x: field.offsetM,
-          z: currentStressFlowSelection.horizontalM,
-        };
-  const topStressPa = runtime.calculateStressAtPointPa(currentSection, {
-    groundDepthM: currentSection.groundDepthM,
-    x: pointCoordinates.x,
-    y: currentSection.heightM / 2 - 0.0005,
-    z: pointCoordinates.z,
-  });
-  const baseStressPa = runtime.calculateStressAtPointPa(currentSection, {
-    groundDepthM: currentSection.groundDepthM,
-    x: pointCoordinates.x,
-    y: -currentSection.heightM / 2 + 0.0005,
-    z: pointCoordinates.z,
-  });
-  const groundStressPa = runtime.calculateStressAtPointPa(currentSection, {
-    groundDepthM: currentSection.groundDepthM,
-    x: pointCoordinates.x,
-    y: -currentSection.heightM / 2 - currentSection.groundDepthM * 0.55,
-    z: pointCoordinates.z,
-  });
-
-  stressFlowTitle.textContent = pointCoordinate + ", " + offsetLabel;
-  stressFlowBody.textContent =
-    "Top " +
-    formatFixed(topStressPa / 1000, 1) +
-    " kPa, selected " +
-    formatFixed(pointStressKpa, 1) +
-    " kPa, base " +
-    formatFixed(baseStressPa / 1000, 1) +
-    " kPa, ground " +
-    formatFixed(groundStressPa / 1000, 1) +
-    " kPa.";
-  viewer.update({
-    stressFlowPath: {
-      axis: field.axis,
-      groundY: -currentSection.heightM / 2 - currentSection.groundDepthM * 0.82,
-      horizontalM: currentStressFlowSelection.horizontalM,
-      offsetM: field.offsetM,
-      pointY: currentStressFlowSelection.yM,
-      topY: currentSection.heightM / 2,
-    },
-  });
+  return planeSectionCache;
 }
 
 function drawVerticalSectionPlot() {
   const context = verticalPlotCanvas.getContext("2d");
-  const field = currentVerticalSectionField;
+  const field = currentPlaneSectionField;
 
-  if (!context || !field) {
+  if (!context) {
     return;
   }
 
@@ -1316,40 +1354,25 @@ function drawVerticalSectionPlot() {
   const plotBackground = readThemeCssVar("--plot-bg");
   const plotStroke = readThemeCssVar("--plot-stroke");
   const plotText = readThemeCssVar("--plot-text");
-  const plotFootprint = readThemeCssVar("--plot-footprint");
-  const flowStroke = readThemeCssVar("--accent");
-  const flowFill = readThemeCssVar("--accent-2");
   const insetLeft = 46;
-  const insetRight = 14;
+  const insetRight = 12;
   const insetTop = 14;
-  const insetBottom = 24;
+  const insetBottom = 22;
   const plotWidth = width - insetLeft - insetRight;
   const plotHeight = height - insetTop - insetBottom;
-  const cellWidth = plotWidth / field.columns;
-  const cellHeight = plotHeight / field.rows;
-  const groundSurfaceRatio =
-    (field.yMaxM - (-currentSection.heightM / 2)) / Math.max(field.yMaxM - field.yMinM, 1e-6);
-  const groundSurfaceY = insetTop + plotHeight * groundSurfaceRatio;
-  const specimenHorizontalSpan = field.axis === "xz" ? currentSection.widthM : currentSection.depthM;
-  const specimenLeft =
-    insetLeft +
-    ((field.widthM / 2 - specimenHorizontalSpan / 2) / Math.max(field.widthM, 1e-6)) * plotWidth;
-  const specimenRight =
-    insetLeft +
-    ((field.widthM / 2 + specimenHorizontalSpan / 2) / Math.max(field.widthM, 1e-6)) * plotWidth;
-  const specimenTop = insetTop;
-  const specimenBottom = groundSurfaceY;
 
-  currentVerticalPlotLayout = {
-    height,
-    insetBottom,
-    insetLeft,
-    insetRight,
-    insetTop,
-    plotHeight,
-    plotWidth,
-    width,
-  };
+  if (!field) {
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = readThemeCssVar("--plot-bg");
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = readThemeCssVar("--plot-text");
+    context.font = "600 14px Avenir Next, Segoe UI, sans-serif";
+    context.fillText("Select a surface patch in the viewer to populate this plane.", 18, height * 0.5);
+    return;
+  }
+
+  const cellWidth = plotWidth / Math.max(field.columns, 1);
+  const cellHeight = plotHeight / Math.max(field.rows, 1);
 
   context.clearRect(0, 0, width, height);
   context.fillStyle = plotBackground;
@@ -1370,172 +1393,46 @@ function drawVerticalSectionPlot() {
 
   context.strokeStyle = plotStroke;
   context.lineWidth = 1;
-  context.beginPath();
-  context.moveTo(insetLeft, groundSurfaceY);
-  context.lineTo(width - insetRight, groundSurfaceY);
-  context.stroke();
-
-  context.strokeStyle = plotFootprint;
-  context.setLineDash([6, 4]);
-  context.strokeRect(specimenLeft, specimenTop, specimenRight - specimenLeft, specimenBottom - specimenTop);
-  context.setLineDash([]);
-
-  const selectedPoint =
-    currentStressFlowSelection && currentStressFlowSelection.axis === field.axis
-      ? projectVerticalPlotPoint(
-          field,
-          currentVerticalPlotLayout,
-          currentStressFlowSelection.horizontalM,
-          currentStressFlowSelection.yM
-        )
-      : null;
-
-  if (selectedPoint) {
-    const basePoint = projectVerticalPlotPoint(
-      field,
-      currentVerticalPlotLayout,
-      currentStressFlowSelection.horizontalM,
-      -currentSection.heightM / 2
-    );
-    const topPoint = projectVerticalPlotPoint(
-      field,
-      currentVerticalPlotLayout,
-      currentStressFlowSelection.horizontalM,
-      currentSection.heightM / 2
-    );
-    const bottomPoint = projectVerticalPlotPoint(
-      field,
-      currentVerticalPlotLayout,
-      currentStressFlowSelection.horizontalM,
-      field.yMinM
-    );
-
-    context.strokeStyle = flowStroke;
-    context.lineWidth = 2;
-    context.beginPath();
-    context.moveTo(topPoint.x, topPoint.y);
-    context.lineTo(selectedPoint.x, selectedPoint.y);
-    context.lineTo(basePoint.x, basePoint.y);
-    context.stroke();
-
-    context.beginPath();
-    context.moveTo(basePoint.x, basePoint.y);
-    context.lineTo(basePoint.x, bottomPoint.y - 14);
-    context.stroke();
-
-    context.beginPath();
-    context.moveTo(basePoint.x, basePoint.y);
-    context.lineTo(basePoint.x - 24, bottomPoint.y);
-    context.moveTo(basePoint.x, basePoint.y);
-    context.lineTo(basePoint.x + 24, bottomPoint.y);
-    context.stroke();
-
-    context.fillStyle = flowFill;
-    context.beginPath();
-    context.arc(selectedPoint.x, selectedPoint.y, 5.5, 0, Math.PI * 2);
-    context.fill();
-    context.lineWidth = 2;
-    context.strokeStyle = flowStroke;
-    context.stroke();
-
-    context.beginPath();
-    context.moveTo(selectedPoint.x, selectedPoint.y - 15);
-    context.lineTo(selectedPoint.x, selectedPoint.y + 15);
-    context.moveTo(selectedPoint.x - 10, selectedPoint.y);
-    context.lineTo(selectedPoint.x + 10, selectedPoint.y);
-    context.stroke();
-
-    context.beginPath();
-    context.moveTo(selectedPoint.x, selectedPoint.y - 15);
-    context.lineTo(selectedPoint.x - 4, selectedPoint.y - 8);
-    context.moveTo(selectedPoint.x, selectedPoint.y - 15);
-    context.lineTo(selectedPoint.x + 4, selectedPoint.y - 8);
-    context.moveTo(selectedPoint.x, selectedPoint.y + 15);
-    context.lineTo(selectedPoint.x - 4, selectedPoint.y + 8);
-    context.moveTo(selectedPoint.x, selectedPoint.y + 15);
-    context.lineTo(selectedPoint.x + 4, selectedPoint.y + 8);
-    context.stroke();
-  }
+  context.strokeRect(insetLeft, insetTop, plotWidth, plotHeight);
 
   context.fillStyle = plotText;
   context.font = "600 11px Avenir Next, Segoe UI, sans-serif";
   context.fillText("sigma", 12, 16);
-  context.fillText(field.horizontalLabel, width - insetRight - 8, height - 6);
+  context.fillText(field.uLabel, width - insetRight - 8, height - 6);
   context.save();
   context.translate(14, height * 0.58);
   context.rotate(-Math.PI / 2);
-  context.fillText("y", 0, 0);
+  context.fillText(field.vLabel, 0, 0);
   context.restore();
-  context.fillText("ground", insetLeft + 6, groundSurfaceY + 14);
-  context.fillText("specimen", specimenLeft + 6, specimenTop + 14);
-}
 
-function handleVerticalPlotSelection(event: MouseEvent) {
-  const field = currentVerticalSectionField;
-  const layout = currentVerticalPlotLayout;
+  const marker = getDisplayedSectionMarker();
 
-  if (!field || !layout) {
-    return;
+  if (marker) {
+    const xRatio = (marker.uM - field.uMinM) / Math.max(field.uMaxM - field.uMinM, 1e-6);
+    const yRatio = (field.vMaxM - marker.vM) / Math.max(field.vMaxM - field.vMinM, 1e-6);
+    const x = insetLeft + clamp(xRatio, 0, 1) * plotWidth;
+    const y = insetTop + clamp(yRatio, 0, 1) * plotHeight;
+
+    context.beginPath();
+    context.fillStyle = "#2fcc71";
+    context.arc(x, y, 5, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = "rgba(255, 255, 255, 0.92)";
+    context.lineWidth = 2;
+    context.stroke();
   }
-
-  const rect = verticalPlotCanvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-
-  if (
-    x < layout.insetLeft ||
-    x > layout.width - layout.insetRight ||
-    y < layout.insetTop ||
-    y > layout.height - layout.insetBottom
-  ) {
-    return;
-  }
-
-  const columnIndex = clamp(
-    Math.floor(((x - layout.insetLeft) / Math.max(layout.plotWidth, 1e-6)) * field.columns),
-    0,
-    field.columns - 1
-  );
-  const rowIndex = clamp(
-    Math.floor(((y - layout.insetTop) / Math.max(layout.plotHeight, 1e-6)) * field.rows),
-    0,
-    field.rows - 1
-  );
-  const horizontalM = -field.widthM / 2 + (columnIndex / Math.max(field.columns - 1, 1)) * field.widthM;
-  const yM = field.yMaxM - (rowIndex / Math.max(field.rows - 1, 1)) * (field.yMaxM - field.yMinM);
-  const valueIndex = rowIndex * field.columns + columnIndex;
-
-  if (
-    currentStressFlowSelection &&
-    currentStressFlowSelection.axis === field.axis &&
-    currentStressFlowSelection.valueIndex === valueIndex
-  ) {
-    currentStressFlowSelection = null;
-  } else {
-    currentStressFlowSelection = {
-      axis: field.axis,
-      horizontalM,
-      rowIndex,
-      stressPa: field.valuesPa[valueIndex],
-      valueIndex,
-      yM,
-    };
-  }
-
-  syncStressFlowSelection();
-  drawVerticalSectionPlot();
 }
 
 function getGroundStressField(
   runtimeApi: ConcreteStressRuntime,
   stressState: StressState,
-  bounds: StressBounds,
+  materialScaleMaxPa: number,
   groundDepthM: number
 ) {
   const sampleY = -stressState.heightM / 2 - GROUND_SURFACE_SAMPLE_OFFSET_M;
   const cacheKey = createGroundFieldCacheKey(
     stressState,
-    bounds,
+    materialScaleMaxPa,
     groundDepthM,
     sampleY,
     GROUND_FIELD_COLUMNS,
@@ -1550,7 +1447,7 @@ function getGroundStressField(
   groundFieldCache = buildGroundStressField(
     runtimeApi,
     stressState,
-    bounds,
+    materialScaleMaxPa,
     groundDepthM,
     sampleY,
     GROUND_FIELD_COLUMNS,
@@ -1562,13 +1459,13 @@ function getGroundStressField(
 function getGroundStressVolumeLayers(
   runtimeApi: ConcreteStressRuntime,
   stressState: StressState,
-  bounds: StressBounds,
+  materialScaleMaxPa: number,
   groundDepthM: number
 ) {
   const cacheKey = [
     createGroundFieldCacheKey(
       stressState,
-      bounds,
+      materialScaleMaxPa,
       groundDepthM,
       -stressState.heightM / 2 - GROUND_SURFACE_SAMPLE_OFFSET_M,
       GROUND_VOLUME_COLUMNS,
@@ -1589,7 +1486,7 @@ function getGroundStressVolumeLayers(
     const field = buildGroundStressField(
       runtimeApi,
       stressState,
-      bounds,
+      materialScaleMaxPa,
       groundDepthM,
       y,
       GROUND_VOLUME_COLUMNS,
@@ -1606,20 +1503,72 @@ function getGroundStressVolumeLayers(
   return groundVolumeCache;
 }
 
+function deriveFieldStressBounds(
+  stressState: StressState,
+  groundStressField: GroundStressField,
+  groundStressVolumeLayers: GroundStressVolumeLayer[],
+  planeSectionField: PlaneSectionField | null
+): StressBounds {
+  let min = Math.min(0, stressState.appliedLoadStressPa, stressState.combinedStressPa);
+  let max = Math.max(
+    stressState.appliedLoadStressPa,
+    stressState.combinedStressPa,
+    stressState.maxContactStressPa
+  );
+  const fields: Array<{ valuesPa: number[] }> = [groundStressField, ...groundStressVolumeLayers];
+
+  if (planeSectionField) {
+    fields.push(planeSectionField);
+  }
+
+  fields.forEach(function (field) {
+    field.valuesPa.forEach(function (value) {
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    });
+  });
+
+  return {
+    max: Math.max(max, min + 1),
+    min,
+  };
+}
+
 function updateRuntimeMetrics() {
   if (!runtime) {
     return;
   }
 
-  currentRuntimeMetrics = runtime.getMetrics();
-  wasmCallsRate.textContent = formatFixed(currentRuntimeMetrics.callsPerSecond, 1) + " calls/s";
-  wasmTotalCalls.textContent = formatRounded(currentRuntimeMetrics.totalCalls);
-  wasmPointCalls.textContent = formatRounded(currentRuntimeMetrics.functionCalls.calculateStressAtPointPa);
-  wasmCallTime.textContent = formatFixed(currentRuntimeMetrics.averageCallDurationMs, 3) + " ms";
+  const currentRuntimeMetrics = runtime.getMetrics();
+  if (wasmCallsRate) {
+    wasmCallsRate.textContent = formatFixed(currentRuntimeMetrics.callsPerSecond, 1) + " calcs/s";
+  }
+  if (wasmTotalCalls) {
+    wasmTotalCalls.textContent = formatRounded(currentRuntimeMetrics.totalCalls);
+  }
+  if (wasmPointCalls) {
+    wasmPointCalls.textContent = formatRounded(currentRuntimeMetrics.functionCalls.calculateStressAtPointPa);
+  }
+  if (wasmCallTime) {
+    wasmCallTime.textContent = formatFixed(currentRuntimeMetrics.averageCallDurationMs, 3) + " ms";
+  }
+  perfRateHistory.push(currentRuntimeMetrics.callsPerSecond);
+  if (perfRateHistory.length > 48) {
+    perfRateHistory.shift();
+  }
+  wasmRateFloating.textContent = formatFixed(currentRuntimeMetrics.callsPerSecond, 1) + " calcs/s";
+  perfPeakRate.textContent =
+    formatFixed(
+      perfRateHistory.reduce(function (maxValue, value) {
+        return Math.max(maxValue, value);
+      }, 0),
+      1
+    ) + " peak";
+  drawPerfGraph();
 }
 
 function getReadoutStressPa(sectionState: DisplaySectionState) {
-  return sectionState.fieldRangeMaxPa;
+  return sectionState.maxContactStressPa;
 }
 
 function hideHover() {
@@ -1631,15 +1580,17 @@ function hideHover() {
   );
 
   hoverCard.classList.remove("is-visible");
+  currentProbeSectionMarker = null;
   hoverSwatchIndicator.style.width = Math.round(readoutRatio * 100) + "%";
   stressReadoutTitle.textContent = currentSection.sectionLabel;
   stressBarMarker.style.top = (100 - readoutRatio * 100) + "%";
   stressReadoutBody.textContent =
-    "Field range is " +
-    formatFixed(currentSection.fieldRangeMinPa / 1000, 1) +
+    "Pillar range is " +
+    formatFixed(currentSection.appliedLoadStressPa / 1000, 1) +
     " to " +
-    formatFixed(currentSection.fieldRangeMaxPa / 1000, 1) +
-    " kPa, while colours are referenced against a 40.0 MPa concrete capacity.";
+    formatFixed(currentSection.maxContactStressPa / 1000, 1) +
+    " kPa.";
+  drawVerticalSectionPlot();
 }
 
 function showHoverProbe(probe: ViewerProbe) {
@@ -1653,14 +1604,12 @@ function showHoverProbe(probe: ViewerProbe) {
     y: probe.modelPoint.y,
     z: probe.modelPoint.z,
   });
-  const selfPa =
-    probe.domain === "specimen"
-      ? getSelfWeightStressAtLocalYPa(probe.localPoint.y, currentSection)
-      : 0;
-  const totalKpa = totalPa / 1000;
-  const selfKpa = selfPa / 1000;
-  const appliedKpa = currentSection.appliedLoadStressPa / 1000;
-  const stressRatio = getStressRatio(totalPa, currentSection.rangeMinPa, currentSection.rangeMaxPa);
+  const displayPa =
+    probe.domain === "ground"
+      ? getTransferredGroundStressPa(currentSection, probe.modelPoint.y, totalPa)
+      : totalPa;
+  const displayKpa = displayPa / 1000;
+  const stressRatio = getStressRatio(displayPa, currentSection.rangeMinPa, currentSection.rangeMaxPa);
   const shellRect = diagramShell.getBoundingClientRect();
   const cardWidth = hoverCard.offsetWidth || 220;
   const cardHeight = hoverCard.offsetHeight || 84;
@@ -1684,28 +1633,32 @@ function showHoverProbe(probe: ViewerProbe) {
     .join(", ");
 
   if (probe.domain === "ground") {
-    hoverStress.textContent = "sigma = " + formatFixed(totalKpa, 1) + " kPa on ground surface";
+    hoverStress.textContent = "sigma_v = " + formatFixed(displayKpa, 1) + " kPa in ground";
     hoverNote.textContent =
-      "Ground surface point. This stress includes transferred load from the prism footprint.";
+      "Ground point. The display removes the geostatic background term so the footing-induced increment stays visible.";
     stressReadoutTitle.textContent = "Probe on ground";
   } else {
+    const selfPa = getSelfWeightStressAtLocalYPa(probe.localPoint.y, currentSection);
+    const appliedKpa = currentSection.appliedLoadStressPa / 1000;
+    const selfKpa = selfPa / 1000;
     hoverStress.textContent =
-      "sigma = " + formatFixed(totalKpa, 1) + " kPa (" +
-      formatFixed(selfKpa, 1) + " self + " + formatFixed(appliedKpa, 1) + " applied)";
+      "sigma_v = " + formatFixed(displayKpa, 1) + " kPa (" +
+      formatFixed(appliedKpa, 1) + " applied + " +
+      formatFixed(selfKpa, 1) + " self-weight)";
     hoverNote.textContent =
-      "Specimen surface point. This point sits at " +
-      formatFixed(stressRatio * 100, 1) + "% of the concrete reference capacity scale.";
+      "Pillar point. In this model the stress on a given horizontal slice is uniform across the section and varies only with height.";
     stressReadoutTitle.textContent = "Probe on specimen";
   }
 
   hoverSwatchIndicator.style.width = Math.round(stressRatio * 100) + "%";
   stressReadoutBody.textContent =
-    "Point stress " + formatFixed(totalKpa, 1) + " kPa. Current field range is " +
-    formatFixed(currentSection.fieldRangeMinPa / 1000, 1) + " to " +
-    formatFixed(currentSection.fieldRangeMaxPa / 1000, 1) +
-    " kPa, coloured against a 40.0 MPa concrete reference.";
+    "Point vertical stress " + formatFixed(displayKpa, 1) + " kPa. Pillar range is " +
+    formatFixed(currentSection.appliedLoadStressPa / 1000, 1) + " to " +
+    formatFixed(currentSection.maxContactStressPa / 1000, 1) +
+    " kPa.";
   stressBarMarker.style.top = (100 - stressRatio * 100) + "%";
   hoverCard.classList.add("is-visible");
+  updateSectionMarkerFromProbe(probe);
 }
 
 function readPositiveValue(input: HTMLInputElement, fallback: number, minValue: number) {
@@ -1714,6 +1667,17 @@ function readPositiveValue(input: HTMLInputElement, fallback: number, minValue: 
     return fallback;
   }
   return Math.max(minValue, parsed);
+}
+
+function readSteppedPositiveValue(
+  input: HTMLInputElement,
+  fallback: number,
+  minValue: number,
+  step: number
+) {
+  const value = readPositiveValue(input, fallback, minValue);
+  const stepped = Math.round(value / step) * step;
+  return Math.max(minValue, stepped);
 }
 
 function readClampedValue(
@@ -1730,45 +1694,48 @@ function readClampedValue(
 }
 
 function updateVolumeView(stressState: StressState) {
-  const bounds = getFieldStressBounds(stressState);
-  const sectionState = getVolumeStressState(bounds);
+  const scaleBounds = getStressScaleBounds(stressState);
+  const materialScaleMaxPa = getMaterialStressScaleMaxPa(scaleBounds.max);
+  const sectionState = getVolumeStressState(stressState);
+  const pillarMinPa = 0;
+  const pillarMaxPa = Math.max(stressState.appliedLoadStressPa, stressState.maxContactStressPa, 1);
   const groundDepthM = getGroundDepthM(stressState);
-  const groundStressField = getGroundStressField(runtime, stressState, bounds, groundDepthM);
-  const groundStressVolumeLayers = getGroundStressVolumeLayers(runtime, stressState, bounds, groundDepthM);
-  const verticalSectionField = getVerticalSectionField(
+  const groundStressField = getGroundStressField(runtime, stressState, materialScaleMaxPa, groundDepthM);
+  const groundStressVolumeLayers = getGroundStressVolumeLayers(
     runtime,
     stressState,
-    bounds,
-    groundDepthM,
-    verticalSectionState
+    materialScaleMaxPa,
+    groundDepthM
   );
-  const materialScaleMaxPa = getMaterialStressScaleMaxPa(bounds.max);
-  const stressRatio = getStressRatio(sectionState.representativeStressPa, 0, materialScaleMaxPa);
-  const groundSurfaceMinPa = groundStressField.valuesPa.reduce(function (minValue, value) {
+  const planeSectionField = getPlaneSectionField(
+    runtime,
+    stressState,
+    currentLockedSectionPlane,
+    materialScaleMaxPa,
+    groundDepthM
+  );
+  const bounds = deriveFieldStressBounds(
+    stressState,
+    groundStressField,
+    groundStressVolumeLayers,
+    planeSectionField
+  );
+  const stressRatio = getStressRatio(stressState.maxContactStressPa, pillarMinPa, pillarMaxPa);
+  const planeMinPa = planeSectionField?.valuesPa.reduce(function (minValue, value) {
     return Math.min(minValue, value);
-  }, Number.POSITIVE_INFINITY);
-  const groundSurfaceMaxPa = groundStressField.valuesPa.reduce(function (maxValue, value) {
+  }, Number.POSITIVE_INFINITY) || 0;
+  const planeMaxPa = planeSectionField?.valuesPa.reduce(function (maxValue, value) {
     return Math.max(maxValue, value);
-  }, 0);
-  const verticalMinPa = verticalSectionField.valuesPa.reduce(function (minValue, value) {
-    return Math.min(minValue, value);
-  }, Number.POSITIVE_INFINITY);
-  const verticalMaxPa = verticalSectionField.valuesPa.reduce(function (maxValue, value) {
-    return Math.max(maxValue, value);
-  }, 0);
-  const sectionOffsetLabel =
-    verticalSectionState.axis === "xz"
-      ? "z = " + formatFixed(verticalSectionField.offsetM + stressState.depthM / 2, 3) + " m"
-      : "x = " + formatFixed(verticalSectionField.offsetM + stressState.widthM / 2, 3) + " m";
+  }, 0) || 0;
 
   currentSection = {
     ...stressState,
     fieldRangeMaxPa: bounds.max,
     fieldRangeMinPa: bounds.min,
     groundDepthM,
-    rangeMaxPa: materialScaleMaxPa,
-    rangeMinPa: 0,
-    sectionLabel: "Whole volume",
+    rangeMaxPa: pillarMaxPa,
+    rangeMinPa: pillarMinPa,
+    sectionLabel: "Concrete pillar",
   };
 
   sectionDimensions.textContent =
@@ -1776,69 +1743,88 @@ function updateVolumeView(stressState: StressState) {
     formatFixed(stressState.heightM, 2) + " x " +
     formatFixed(stressState.depthM, 2) + " m prism";
   ratioLabel.textContent =
-    "Field " + formatFixed(bounds.min / 1000, 1) + " to " +
-    formatFixed(bounds.max / 1000, 1) + " kPa";
-  stressRangeMax.textContent = formatFixed(materialScaleMaxPa / 1_000_000, 1) + " MPa";
-  stressRangeMid.textContent = formatFixed(bounds.max / 1000, 1) + " kPa";
-  stressRangeMin.textContent = "0.0 kPa";
+    "Pillar " + formatFixed(stressState.appliedLoadStressPa / 1000, 1) + " to " +
+    formatFixed(stressState.maxContactStressPa / 1000, 1) + " kPa";
+  stressRangeMax.textContent = formatFixed(pillarMaxPa / 1000, 1) + " kPa";
+  stressRangeMin.textContent = formatFixed(pillarMinPa / 1000, 1) + " kPa";
   stressBarMarker.style.top = (100 - stressRatio * 100) + "%";
   hoverSwatchIndicator.style.width = Math.round(stressRatio * 100) + "%";
-  stressReadoutTitle.textContent = "Whole volume gradient";
-  currentGroundSurfaceField = groundStressField;
-  groundPlotRange.textContent =
-    "Surface range " +
-    formatFixed(groundSurfaceMinPa / 1000, 1) +
-    " to " +
-    formatFixed(groundSurfaceMaxPa / 1000, 1) +
-    " kPa";
-  groundPlotFootprint.textContent =
-    "Loaded footprint " +
-    formatFixed(stressState.widthM, 2) +
-    " x " +
-    formatFixed(stressState.depthM, 2) +
-    " m";
-  currentVerticalSectionField = verticalSectionField;
-  verticalPlotSummary.textContent =
-    (verticalSectionState.axis === "xz" ? "XZ" : "YZ") +
-    " section through the coupled specimen-ground field.";
-  verticalPlotRange.textContent =
-    "Section range " +
-    formatFixed(verticalMinPa / 1000, 1) +
-    " to " +
-    formatFixed(verticalMaxPa / 1000, 1) +
-    " kPa";
-  verticalPlotPosition.textContent =
-    (verticalSectionState.axis === "xz" ? "XZ" : "YZ") +
-    " section at " +
-    sectionOffsetLabel;
-  saveVerticalSectionState(verticalSectionState);
+  stressReadoutTitle.textContent = "Concrete pillar";
+  currentPlaneSectionField = planeSectionField;
+  if (planeSectionField) {
+    verticalPlotSummary.textContent =
+      planeSectionField.plane.title +
+      ". Local " +
+      planeSectionField.uLabel +
+      "/" +
+      planeSectionField.vLabel +
+      " coordinates.";
+    verticalPlotRange.textContent =
+      "Section range " +
+      formatFixed(planeMinPa / 1000, 1) +
+      " to " +
+      formatFixed(planeMaxPa / 1000, 1) +
+      " kPa";
+    verticalPlotPosition.textContent =
+      "Origin (" +
+      formatFixed(planeSectionField.plane.origin.x, 3) +
+      ", " +
+      formatFixed(planeSectionField.plane.origin.y, 3) +
+      ", " +
+      formatFixed(planeSectionField.plane.origin.z, 3) +
+      ") m";
+    stressFlowTitle.textContent = planeSectionField.plane.title;
+    stressFlowBody.textContent =
+      planeSectionField.uLabel +
+      " spans " +
+      formatFixed(planeSectionField.uMinM, 2) +
+      " to " +
+      formatFixed(planeSectionField.uMaxM, 2) +
+      " m and " +
+      planeSectionField.vLabel +
+      " spans " +
+      formatFixed(planeSectionField.vMinM, 2) +
+      " to " +
+      formatFixed(planeSectionField.vMaxM, 2) +
+      " m around the locked point.";
+  } else {
+    verticalPlotSummary.textContent =
+      "Lock a local surface slice from the viewer to inspect this internal plane.";
+    verticalPlotRange.textContent = "Section range 0.0 to 0.0 kPa";
+    verticalPlotPosition.textContent = "No plane selected";
+    stressFlowTitle.textContent = "Selected plane";
+    stressFlowBody.textContent = "The green marker uses the same local coordinates as the locked internal plane.";
+  }
+
+  if (!planeSectionField) {
+    currentProbeSectionMarker = null;
+    clearSectionCanvasHover();
+  }
 
   viewer.update({
     depthM: stressState.depthM,
     groundStressVolumeLayers,
     heightM: stressState.heightM,
-    sectionAxis: verticalSectionState.axis,
     sectionBottomColorCss: sectionState.sectionBottomColorCss,
     sectionGradientMode: sectionState.sectionGradientMode,
-    sectionOffsetRatio: verticalSectionState.offsetRatio,
     sectionTopColorCss: sectionState.sectionTopColorCss,
     sectionUniformColorCss: sectionState.sectionUniformColorCss,
     groundStressField,
-    showReferenceFigure: viewerEnvironment.showFigure,
-    showSection: verticalSectionState.showPlane,
+    selectedSectionPlane: currentLockedSectionPlane,
+    showReferenceFigure: false,
+    showSection: hasLockedSectionSelection && showLockedSectionPlane,
     showGround: viewerEnvironment.showGround,
-    showGroundVolume: viewerEnvironment.showGroundVolume,
-    showReferenceHouse: viewerEnvironment.showHouse,
-    showSky: viewerEnvironment.showSky,
+    showGroundVolume: viewerEnvironment.showGround,
+    showReferenceHouse: false,
+    showSky: false,
+    stressFlowPath: null,
     theme: currentTheme,
     volumeBottomColorCss: sectionState.volumeBottomColorCss,
-    volumeSliceCount: 18,
+    volumeSliceCount: 20,
     volumeTopColorCss: sectionState.volumeTopColorCss,
     widthM: stressState.widthM,
   });
 
-  syncStressFlowSelection();
-  drawGroundSurfacePlot();
   drawVerticalSectionPlot();
   hideHover();
   requestViewportHeightSync();
@@ -1846,28 +1832,34 @@ function updateVolumeView(stressState: StressState) {
 
 let runtime: ConcreteStressRuntime | null = null;
 
-function render() {
+function renderNow() {
   if (!runtime) {
     return;
   }
 
   const inputs: StressInputs = {
-    appliedLoadN: Math.max(0, readPositiveValue(appliedLoad, 2500, 0)),
+    appliedLoadN: DEFAULT_APPLIED_LOAD_N,
     densityKgM3: readPositiveValue(density, 2400, 100),
-    depthM: readPositiveValue(depth, 0.1, 0.01),
-    groundPoissonRatio: readClampedValue(groundNu, 0.3, 0.01, 0.49),
-    groundYoungsModulusMpa: readPositiveValue(groundE, 120, 1),
-    heightM: readPositiveValue(height, 1, 0.01),
-    specimenPoissonRatio: readClampedValue(specimenNu, 0.2, 0.01, 0.49),
-    specimenYoungsModulusMpa: readPositiveValue(specimenE, 30000, 100),
-    widthM: readPositiveValue(width, 0.1, 0.01),
+    depthM: readSteppedPositiveValue(depth, 1, 0.1, 0.1),
+    groundPoissonRatio: 0.3,
+    groundYoungsModulusMpa: 120,
+    heightM: readSteppedPositiveValue(height, 10, 0.1, 0.1),
+    specimenPoissonRatio: 0.2,
+    specimenYoungsModulusMpa: 30000,
+    widthM: readSteppedPositiveValue(width, 1, 0.1, 0.1),
   };
+  width.value = formatStepValue(inputs.widthM);
+  depth.value = formatStepValue(inputs.depthM);
+  height.value = formatStepValue(inputs.heightM);
   const stressState = calculateStressState(runtime, inputs);
 
   output.textContent = "";
   runtime.printStressReport(inputs);
 
-  stressKpa.textContent = formatFixed(stressState.combinedStressPa / 1000, 1);
+  stressKpa.textContent = formatFixed(stressState.maxContactStressPa / 1000, 1);
+  stressHeroLabel.textContent = "Base vertical stress";
+  stressHeroNote.textContent =
+    "Top vertical stress " + formatFixed(stressState.appliedLoadStressPa / 1000, 1) + " kPa";
   selfWeightValue.textContent = formatForce(stressState.selfWeightN);
   appliedLoadValue.textContent = formatForce(stressState.appliedLoadN);
   massValue.textContent = formatFixed(stressState.massKg, 1) + " kg";
@@ -1878,10 +1870,60 @@ function render() {
   updateRuntimeMetrics();
 }
 
+async function flushRender() {
+  pendingRenderTimer = 0;
+
+  if (!runtime) {
+    return;
+  }
+
+  if (isCalculating) {
+    renderQueuedWhileBusy = true;
+    return;
+  }
+
+  setCalculatingState(true);
+  await new Promise<void>(function (resolve) {
+    window.requestAnimationFrame(function () {
+      resolve();
+    });
+  });
+
+  try {
+    renderNow();
+  } finally {
+    setCalculatingState(false);
+  }
+
+  if (renderQueuedWhileBusy) {
+    renderQueuedWhileBusy = false;
+    scheduleImmediateRender();
+  }
+}
+
+function scheduleRender(delayMs: number) {
+  if (pendingRenderTimer) {
+    window.clearTimeout(pendingRenderTimer);
+  }
+
+  pendingRenderTimer = window.setTimeout(function () {
+    void flushRender();
+  }, delayMs);
+}
+
+function scheduleDebouncedRender() {
+  scheduleRender(INPUT_RENDER_DEBOUNCE_MS);
+}
+
+function scheduleImmediateRender() {
+  scheduleRender(0);
+}
+
 async function boot() {
   try {
+    const wasmBasePath = new URL("wasm/", window.location.href).pathname.replace(/\/$/, "");
     runtime = await loadConcreteStressRuntime({
-      basePath: "/wasm",
+      basePath: wasmBasePath,
       onStdout(text) {
         output.textContent += text + "\n";
       },
@@ -1894,15 +1936,10 @@ async function boot() {
     throw error;
   }
 
-  width.addEventListener("input", render);
-  depth.addEventListener("input", render);
-  height.addEventListener("input", render);
-  density.addEventListener("input", render);
-  appliedLoad.addEventListener("input", render);
-  specimenE.addEventListener("input", render);
-  specimenNu.addEventListener("input", render);
-  groundE.addEventListener("input", render);
-  groundNu.addEventListener("input", render);
+  width.addEventListener("input", scheduleDebouncedRender);
+  depth.addEventListener("input", scheduleDebouncedRender);
+  height.addEventListener("input", scheduleDebouncedRender);
+  density.addEventListener("input", scheduleDebouncedRender);
   themeToggle.addEventListener("click", function () {
     currentTheme = currentTheme === "dark" ? "light" : "dark";
     try {
@@ -1912,48 +1949,123 @@ async function boot() {
     }
     applyTheme();
   });
+  perfToggle.addEventListener("click", function () {
+    perfPanelCollapsed = !perfPanelCollapsed;
+    applyPerfPanelState();
+  });
   toggleGround.addEventListener("click", function () {
     viewerEnvironment.showGround = !viewerEnvironment.showGround;
     applyViewerEnvironment();
   });
-  toggleGroundVolume.addEventListener("click", function () {
-    viewerEnvironment.showGroundVolume = !viewerEnvironment.showGroundVolume;
-    applyViewerEnvironment();
-  });
-  toggleSky.addEventListener("click", function () {
-    viewerEnvironment.showSky = !viewerEnvironment.showSky;
-    applyViewerEnvironment();
-  });
-  toggleHouse.addEventListener("click", function () {
-    viewerEnvironment.showHouse = !viewerEnvironment.showHouse;
-    applyViewerEnvironment();
-  });
-  toggleFigure.addEventListener("click", function () {
-    viewerEnvironment.showFigure = !viewerEnvironment.showFigure;
-    applyViewerEnvironment();
-  });
   toggleSectionPlane.addEventListener("click", function () {
-    verticalSectionState.showPlane = !verticalSectionState.showPlane;
+    showLockedSectionPlane = !showLockedSectionPlane;
     applyViewerEnvironment();
   });
-  verticalSectionAxis.addEventListener("input", function () {
-    verticalSectionState.axis = verticalSectionAxis.value === "yz" ? "yz" : "xz";
-    syncViewerEnvironmentControls();
-    render();
+  openSectionDialogButton.addEventListener("click", function () {
+    openFloatingWindow(sectionWindow, drawVerticalSectionPlot);
   });
-  verticalSectionOffset.addEventListener("input", function () {
-    verticalSectionState.offsetRatio = clamp(Number(verticalSectionOffset.value), 0, 1);
-    syncViewerEnvironmentControls();
-    render();
+  openReportDialogButton.addEventListener("click", function () {
+    openFloatingWindow(reportWindow, function () {});
   });
-  verticalPlotCanvas.addEventListener("click", handleVerticalPlotSelection);
-  collapsibleCards.forEach(function (card) {
-    card.addEventListener("toggle", requestViewportHeightSync);
+  document.querySelectorAll("[data-window-close]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const windowId = (button as HTMLElement).getAttribute("data-window-close");
+      const target = windowId ? document.getElementById(windowId) : null;
+
+      if (!(target instanceof HTMLDivElement)) {
+        return;
+      }
+
+      closeFloatingWindow(target);
+    });
+  });
+  document.querySelectorAll("[data-info-key]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      const infoKey = (button as HTMLElement).dataset.infoKey;
+
+      if (infoKey) {
+        openInfoWindow(infoKey);
+      }
+    });
+  });
+  floatingWindows.forEach(function (windowElement) {
+    installFloatingWindowDrag(windowElement);
+    windowElement.addEventListener("pointerdown", function () {
+      bringFloatingWindowToFront(windowElement);
+    });
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      closeOpenFloatingWindows();
+    }
+  });
+
+  document.addEventListener("pointerdown", function (event) {
+    const target = event.target as HTMLElement | null;
+
+    if (target?.closest(".floating-window__panel")) {
+      return;
+    }
+
+    if (target?.closest(".viewer-canvas, .viewer-canvas-element")) {
+      closeOpenFloatingWindows();
+      return;
+    }
+
+    closeOpenFloatingWindows();
   });
 
   window.addEventListener("resize", function () {
     requestViewportHeightSync();
-    drawGroundSurfacePlot();
+    clampOpenFloatingWindows();
+    drawVerticalSectionPlot();
+    drawPerfGraph();
+  });
+
+  verticalPlotCanvas.addEventListener("pointermove", function (event) {
+    const field = currentPlaneSectionField;
+
+    if (!field) {
+      clearSectionCanvasHover();
+      drawVerticalSectionPlot();
+      return;
+    }
+
+    const rect = verticalPlotCanvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const insetLeft = 46;
+    const insetRight = 12;
+    const insetTop = 14;
+    const insetBottom = 22;
+    const plotWidth = rect.width - insetLeft - insetRight;
+    const plotHeight = rect.height - insetTop - insetBottom;
+    const insidePlot =
+      x >= insetLeft &&
+      x <= insetLeft + plotWidth &&
+      y >= insetTop &&
+      y <= insetTop + plotHeight;
+
+    if (!insidePlot) {
+      clearSectionCanvasHover();
+      drawVerticalSectionPlot();
+      return;
+    }
+
+    const uRatio = (x - insetLeft) / Math.max(plotWidth, 1);
+    const vRatio = (y - insetTop) / Math.max(plotHeight, 1);
+    const uM = field.uMinM + uRatio * (field.uMaxM - field.uMinM);
+    const vM = field.vMaxM - vRatio * (field.vMaxM - field.vMinM);
+
+    currentCanvasSectionMarker = { uM, vM };
+    currentCanvasSectionPoint = getPlanePointAt(field.plane, uM, vM);
+    syncSectionPlaneHighlight();
+    drawVerticalSectionPlot();
+  });
+
+  verticalPlotCanvas.addEventListener("pointerleave", function () {
+    clearSectionCanvasHover();
     drawVerticalSectionPlot();
   });
 
@@ -1965,8 +2077,10 @@ async function boot() {
 
   syncViewerEnvironmentControls();
   applyTheme();
+  applyPerfPanelState();
   runtimeMetricsTimer = window.setInterval(updateRuntimeMetrics, 250);
-  render();
+  updateRuntimeMetrics();
+  scheduleImmediateRender();
 }
 
 boot();
