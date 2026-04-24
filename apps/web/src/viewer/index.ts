@@ -107,6 +107,7 @@ export interface ConcreteStressViewerOptions {
 
 export interface ConcreteStressViewer {
   dispose(): void;
+  resetCamera(): void;
   update(nextState: Partial<ViewerState>): void;
 }
 
@@ -908,6 +909,12 @@ export function createConcreteStressViewer(
     controls.update();
   }
 
+  function resetCamera() {
+    hasFramed = false;
+    updateCameraEnvelope(currentSceneExtent);
+    onCameraChange(getCameraPose());
+  }
+
   function getGroundPlaneExtents() {
     const maxDimension = Math.max(currentState.widthM, currentState.depthM, currentState.heightM, 0.15);
 
@@ -1686,6 +1693,7 @@ export function createConcreteStressViewer(
   renderLoop();
 
   return {
+    resetCamera,
     update(nextState) {
       currentState = { ...currentState, ...nextState };
       if (nextState.cameraPose) {

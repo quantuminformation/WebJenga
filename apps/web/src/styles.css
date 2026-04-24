@@ -761,6 +761,37 @@ h1 {
   min-height: 96px;
 }
 
+.stress-legend {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.stress-legend span {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  line-height: 1.2;
+}
+
+.stress-legend__swatch {
+  border: 1px solid color-mix(in srgb, var(--panel-border) 78%, transparent);
+  display: inline-block;
+  height: 10px;
+  width: 18px;
+}
+
+.stress-legend__swatch--low {
+  background: rgb(0, 0, 255);
+}
+
+.stress-legend__swatch--high {
+  background: rgb(255, 0, 0);
+}
+
 .perf-panel {
   display: grid;
   gap: 8px;

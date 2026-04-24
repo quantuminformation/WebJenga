@@ -159,6 +159,9 @@ document.querySelector("#app").innerHTML = `
             <h2>Camera</h2>
             <p>Drag to orbit, scroll to zoom, hover the pillar to inspect stress.</p>
           </div>
+          <div class="toggle-row">
+            <button class="toggle-chip" id="reset-camera" type="button">Reset view</button>
+          </div>
         </section>
 
         <section class="overlay-card hud-card hud-card--environment">
@@ -179,6 +182,7 @@ document.querySelector("#app").innerHTML = `
           <div class="toggle-row">
             <button class="toggle-chip" id="toggle-section-plane" type="button" disabled>Show plane</button>
             <button class="toggle-chip" id="open-section-dialog" type="button" disabled>Cross-section window</button>
+            <button class="toggle-chip" id="clear-section" type="button" disabled>Clear</button>
           </div>
           <span class="field-note" id="selection-hint">Click the pillar or ground to lock a section plane.</span>
         </section>
@@ -244,6 +248,10 @@ document.querySelector("#app").innerHTML = `
                   <strong id="stress-range-min">0.0 kPa</strong>
                   <span>Zero load reference</span>
                 </div>
+              </div>
+              <div class="stress-legend" aria-label="Stress color legend">
+                <span><i class="stress-legend__swatch stress-legend__swatch--low"></i>Lower vertical stress</span>
+                <span><i class="stress-legend__swatch stress-legend__swatch--high"></i>Higher vertical stress</span>
               </div>
             </div>
           </div>
@@ -354,9 +362,11 @@ const viewerCanvas = document.getElementById("viewer-canvas");
 const viewportShell = document.getElementById("viewport-shell");
 const viewportFullscreenButton = document.getElementById("viewport-fullscreen");
 const themeToggle = document.getElementById("theme-toggle");
+const resetCameraButton = document.getElementById("reset-camera") as HTMLButtonElement;
 const toggleGround = document.getElementById("toggle-ground");
 const toggleSectionPlane = document.getElementById("toggle-section-plane") as HTMLButtonElement;
 const selectionHint = document.getElementById("selection-hint");
+const clearSectionButton = document.getElementById("clear-section") as HTMLButtonElement;
 const openSectionDialogButton = document.getElementById("open-section-dialog") as HTMLButtonElement;
 const openReportDialogButton = document.getElementById("open-report-dialog") as HTMLButtonElement;
 const wasmCallsRate = document.getElementById("wasm-calls-rate");
@@ -658,6 +668,7 @@ function setToggleState(button, isActive) {
 function updateSectionActionState() {
   toggleSectionPlane.disabled = !hasLockedSectionSelection;
   openSectionDialogButton.disabled = !hasLockedSectionSelection;
+  clearSectionButton.disabled = !hasLockedSectionSelection;
   selectionHint.textContent = hasLockedSectionSelection
     ? "Plane locked. Open the cross-section window or show the plane in the viewer."
     : "Click the pillar to lock a section plane.";
@@ -732,6 +743,19 @@ function handleProbeSelection(probe: ViewerProbe | null) {
 
   syncViewerEnvironmentControls();
   updateSectionActionState();
+  scheduleImmediateRender();
+}
+
+function clearSectionSelection() {
+  currentLockedSectionPlane = null;
+  hasLockedSectionSelection = false;
+  showLockedSectionPlane = true;
+  saveStoredSelectionPlane(null);
+  currentProbeSectionMarker = null;
+  clearSectionCanvasHover();
+  syncViewerEnvironmentControls();
+  updateSectionActionState();
+  persistViewState();
   scheduleImmediateRender();
 }
 
@@ -904,7 +928,12 @@ function updateVolumeView(stressState: StressState) {
     stressState,
     materialScaleMaxPa,
     groundDepthM
-  );
+  ).map(function (layer) {
+    return {
+      ...layer,
+      opacity: hasLockedSectionSelection ? layer.opacity * 0.32 : layer.opacity,
+    };
+  });
   const planeSectionField = stressSampler.getPlaneSectionField(
     runtime,
     stressState,
@@ -1154,6 +1183,11 @@ async function boot() {
     perfPanelCollapsed = !perfPanelCollapsed;
     applyPerfPanelState();
   });
+  resetCameraButton.addEventListener("click", function () {
+    currentCameraPose = null;
+    persistViewState();
+    viewer.resetCamera();
+  });
   toggleGround.addEventListener("click", function () {
     viewerEnvironment.showGround = !viewerEnvironment.showGround;
     applyViewerEnvironment();
@@ -1162,6 +1196,7 @@ async function boot() {
     showLockedSectionPlane = !showLockedSectionPlane;
     applyViewerEnvironment();
   });
+  clearSectionButton.addEventListener("click", clearSectionSelection);
   openSectionDialogButton.addEventListener("click", function () {
     floatingWindowManager.open(sectionWindow, drawVerticalSectionPlot);
   });
