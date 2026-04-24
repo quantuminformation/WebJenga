@@ -260,11 +260,11 @@ document.querySelector("#app").innerHTML = `
                 <span id="calc-status-text">Idle</span>
               </div>
               <div class="perf-panel__meta">
-                <span>WebAssembly calls per second</span>
+                <span>C++ solver calculations per second</span>
                 <strong id="perf-peak-rate">0.0 peak</strong>
               </div>
               <div class="perf-panel__graph-frame">
-                <canvas id="perf-graph-canvas" aria-label="WebAssembly calls per second graph"></canvas>
+                <canvas id="perf-graph-canvas" aria-label="C++ solver calculations per second graph"></canvas>
               </div>
             </div>
           </section>
@@ -750,8 +750,9 @@ function updateRuntimeMetrics() {
   }
 
   const currentRuntimeMetrics = runtime.getMetrics();
+  const solverCalculationsPerSecond = currentRuntimeMetrics.calculationsPerSecond;
   if (wasmCallsRate) {
-    wasmCallsRate.textContent = formatFixed(currentRuntimeMetrics.callsPerSecond, 1) + " calcs/s";
+    wasmCallsRate.textContent = formatFixed(solverCalculationsPerSecond, 1) + " calcs/s";
   }
   if (wasmTotalCalls) {
     wasmTotalCalls.textContent = formatRounded(currentRuntimeMetrics.totalCalls);
@@ -762,11 +763,11 @@ function updateRuntimeMetrics() {
   if (wasmCallTime) {
     wasmCallTime.textContent = formatFixed(currentRuntimeMetrics.averageCallDurationMs, 3) + " ms";
   }
-  perfRateHistory.push(currentRuntimeMetrics.callsPerSecond);
+  perfRateHistory.push(solverCalculationsPerSecond);
   if (perfRateHistory.length > 48) {
     perfRateHistory.shift();
   }
-  wasmRateFloating.textContent = formatFixed(currentRuntimeMetrics.callsPerSecond, 1) + " calcs/s";
+  wasmRateFloating.textContent = formatFixed(solverCalculationsPerSecond, 1) + " calcs/s";
   perfPeakRate.textContent =
     formatFixed(
       perfRateHistory.reduce(function (maxValue, value) {
@@ -1209,7 +1210,7 @@ async function boot() {
     }
 
     if (target?.closest(".viewer-canvas, .viewer-canvas-element")) {
-      floatingWindowManager.closeOpen();
+      floatingWindowManager.closeOpen({ preserveIds: ["section-window"] });
       return;
     }
 

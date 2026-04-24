@@ -678,12 +678,10 @@ export function createConcreteStressViewer(
   const volumeSlicesGroup = new THREE.Group();
   specimenGroup.add(volumeSlicesGroup);
 
-  const prismMaterial = new THREE.MeshStandardMaterial({
+  const prismMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
-    opacity: 0.3,
-    roughness: 0.52,
-    metalness: 0,
+    opacity: 0.32,
     side: THREE.DoubleSide,
     depthWrite: false,
     vertexColors: true,
@@ -1172,7 +1170,7 @@ export function createConcreteStressViewer(
       new THREE.Color(state.volumeBottomColorCss),
       new THREE.Color(state.volumeTopColorCss)
     );
-    prismMaterial.opacity = state.showSection ? 0.11 : 0.18;
+    prismMaterial.opacity = state.showSection ? 0.26 : 0.34;
     replaceGeometry(prismEdges, new THREE.EdgesGeometry(prismMesh.geometry));
 
     specimenGroup.rotation.set(0, 0, 0);
@@ -1412,7 +1410,7 @@ export function createConcreteStressViewer(
         new THREE.MeshBasicMaterial({
           color: sliceColor,
           depthWrite: false,
-          opacity: 0.18,
+          opacity: 0.1,
           side: THREE.DoubleSide,
           transparent: true,
         })

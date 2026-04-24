@@ -19,6 +19,7 @@ export interface StressSamplePoint {
 
 export interface RuntimeCallMetrics {
   averageCallDurationMs: number;
+  calculationsPerSecond: number;
   callsPerSecond: number;
   functionCalls: {
     calculateCombinedStressPa: number;
@@ -28,6 +29,7 @@ export interface RuntimeCallMetrics {
     samplePlaneSectionPa: number;
     printStressReport: number;
   };
+  totalCalculations: number;
   totalCallDurationMs: number;
   totalCalls: number;
 }
@@ -151,6 +153,7 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
     printStressReport: 0,
   };
   let totalCallDurationMs = 0;
+  let totalCalculations = 0;
   let totalCalls = 0;
 
   function trimRecentCalls(nowMs: number) {
@@ -159,24 +162,30 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
     }
   }
 
-  function recordCall(functionName: keyof typeof functionCalls, durationMs: number) {
+  function recordCall(
+    functionName: keyof typeof functionCalls,
+    durationMs: number,
+    calculationCount = 1
+  ) {
     const nowMs = performance.now();
 
     functionCalls[functionName] += 1;
     totalCalls += 1;
+    totalCalculations += calculationCount;
     totalCallDurationMs += durationMs;
-    recentCalls.push({ count: 1, timestampMs: nowMs });
+    recentCalls.push({ count: calculationCount, timestampMs: nowMs });
     trimRecentCalls(nowMs);
   }
 
   function callWithMetrics<T>(
     functionName: keyof typeof functionCalls,
-    callback: () => T
+    callback: () => T,
+    calculationCount = 1
   ): T {
     const startedAtMs = performance.now();
     const result = callback();
 
-    recordCall(functionName, performance.now() - startedAtMs);
+    recordCall(functionName, performance.now() - startedAtMs, calculationCount);
     return result;
   }
 
@@ -309,7 +318,7 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
         } finally {
           module._free(outputPointer);
         }
-      });
+      }, valueCount);
     },
     samplePlaneSectionPa(inputs, sample) {
       const params = toParams(inputs);
@@ -367,18 +376,22 @@ function buildRuntimeApi(module: EmscriptenModuleLike): ConcreteStressRuntime {
         } finally {
           module._free(outputPointer);
         }
-      });
+      }, valueCount);
     },
     getMetrics() {
       const nowMs = performance.now();
       trimRecentCalls(nowMs);
 
+      const calculationsPerSecond = recentCalls.reduce(function (sum, entry) {
+        return sum + entry.count;
+      }, 0);
+
       return {
         averageCallDurationMs: totalCalls ? totalCallDurationMs / totalCalls : 0,
-        callsPerSecond: recentCalls.reduce(function (sum, entry) {
-          return sum + entry.count;
-        }, 0),
+        calculationsPerSecond,
+        callsPerSecond: calculationsPerSecond,
         functionCalls: { ...functionCalls },
+        totalCalculations,
         totalCallDurationMs,
         totalCalls,
       };
