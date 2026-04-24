@@ -1177,7 +1177,7 @@ export function createConcreteStressViewer(
       new THREE.Color(state.volumeBottomColorCss),
       new THREE.Color(state.volumeTopColorCss)
     );
-    prismMaterial.opacity = state.showSection ? 0.26 : 0.34;
+    prismMaterial.opacity = state.showSection ? 0.48 : 0.54;
     replaceGeometry(prismEdges, new THREE.EdgesGeometry(prismMesh.geometry));
 
     specimenGroup.rotation.set(0, 0, 0);
@@ -1430,25 +1430,7 @@ export function createConcreteStressViewer(
   }
 
   function updateGroundStressField(state) {
-    const field = state.groundStressField;
-
-    if (!state.showGround || !field) {
-      groundStressMesh.visible = false;
-      return;
-    }
-
-    replaceGeometry(
-      groundStressMesh,
-      new THREE.PlaneGeometry(
-        field.widthM,
-        field.depthM,
-        Math.max(1, field.columns - 1),
-        Math.max(1, field.rows - 1)
-      )
-    );
-    setGeometryColors(groundStressMesh.geometry, field.colors);
-    groundStressMesh.position.set(0, -state.heightM * 0.5 + Math.max(state.heightM, 0.15) * 0.006, 0);
-    groundStressMesh.visible = true;
+    groundStressMesh.visible = false;
   }
 
   function updateGroundStressVolume(state) {

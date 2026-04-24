@@ -433,7 +433,7 @@ export function createStressSampler() {
 
         return {
           ...field,
-          opacity: 0.18 - normalizedDepth * 0.08,
+          opacity: 0.1 - normalizedDepth * 0.05,
           yM: y,
         };
       });
